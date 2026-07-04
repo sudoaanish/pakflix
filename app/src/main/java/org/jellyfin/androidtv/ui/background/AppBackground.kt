@@ -39,8 +39,19 @@ private fun AppThemeBackground() {
 		val drawable = attributes.getDrawable(0)
 		attributes.recycle()
 
-		if (drawable is ColorDrawable) drawable.toBitmap(1, 1).asImageBitmap()
-		else drawable?.toBitmap()?.asImageBitmap()
+		try {
+			if (drawable is ColorDrawable) {
+				drawable.toBitmap(1, 1).asImageBitmap()
+			} else if (drawable != null) {
+				val width = if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 100
+				val height = if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 100
+				drawable.toBitmap(width, height).asImageBitmap()
+			} else {
+				null
+			}
+		} catch (e: Exception) {
+			null
+		}
 	}
 
 	if (themeBackground != null) {
