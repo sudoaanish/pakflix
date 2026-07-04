@@ -31,7 +31,7 @@ jobs:
       - name: Locate & Package Release APK
         run: |
           mkdir -p release_assets
-          find app/build -name "*.apk" -exec cp {} release_assets/ \;
+          find app/build -name "*.apk" -exec cp {} release_assets/pakflix.apk \;
 
       - name: Create GitHub Release & Upload Assets
         uses: softprops/action-gh-release@v2

@@ -202,8 +202,28 @@ class SelectServerFragment : Fragment() {
 		@Suppress("SetTextI18n")
 		binding.appVersion.text = "PAKFLIX v${BuildConfig.VERSION_NAME}"
 
+		// Auto-Updater Check
+		lifecycleScope.launchWhenResumed {
+			org.jellyfin.androidtv.update.UpdateManager.checkForUpdates(requireContext()) { release ->
+				val apkAsset = release.assets.find { it.name.endsWith(".apk", ignoreCase = true) } ?: return@checkForUpdates
+				androidx.appcompat.app.AlertDialog.Builder(requireContext())
+					.setTitle("PAKFLIX Update Available")
+					.setMessage("A new version (${release.tagName}) of PAKFLIX is available. Would you like to update now?")
+					.setPositiveButton("Update Now") { _, _ ->
+						lifecycleScope.launchWhenResumed {
+							org.jellyfin.androidtv.update.UpdateManager.downloadAndInstallUpdate(
+								requireContext(),
+								apkAsset.downloadUrl
+							) { progress ->
+								binding.appVersion.text = "PAKFLIX Downloading Update: $progress%"
+							}
+						}
+					}
+					.setNegativeButton("Later", null)
+					.show()
+			}
+		}
 
-		// Set focus to fragment
 		binding.root.requestFocus()
 
 		return binding.root

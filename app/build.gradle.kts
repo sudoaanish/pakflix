@@ -15,8 +15,8 @@ android {
 
 		// Release version
 		applicationId = "com.pakflix.tv"
-		versionName = "0.1.1"
-		versionCode = 101
+		versionName = "0.1.2"
+		versionCode = 102
 	}
 
 	buildFeatures {
@@ -95,7 +95,7 @@ android {
 		it.useJUnitPlatform()
 	}}
 
-base.archivesName.set("PAKFLIX-v0.1.1")
+base.archivesName.set("pakflix")
 
 
 
