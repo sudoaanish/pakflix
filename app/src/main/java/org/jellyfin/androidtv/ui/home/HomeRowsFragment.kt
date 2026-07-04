@@ -215,6 +215,10 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	}
 
 	private fun refreshRows(force: Boolean = false, delayed: Boolean = true) {
+		val activeRowIndex = selectedPosition
+		val activeRow = adapter.get(activeRowIndex) as? ListRow
+		val activeItemIndex = (activeRow?.adapter as? ItemRowAdapter)?.indexOf(currentItem) ?: -1
+
 		lifecycleScope.launch(Dispatchers.IO) {
 			if (delayed) delay(1.5.seconds)
 
@@ -222,6 +226,12 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				val rowAdapter = (adapter[i] as? ListRow)?.adapter as? ItemRowAdapter
 				if (force) rowAdapter?.Retrieve()
 				else rowAdapter?.ReRetrieveIfNeeded()
+			}
+
+			withContext(Dispatchers.Main) {
+				if (activeRowIndex in 0 until adapter.size()) {
+					setSelectedPosition(activeRowIndex)
+				}
 			}
 		}
 	}

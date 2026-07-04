@@ -2,7 +2,7 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:id="@+id/background_static"
-        android:drawable="@color/black" />
+        android:drawable="@drawable/bg_gradient_obsidian" />
     <item
         android:id="@+id/background_current"
         android:drawable="@color/transparent" />
