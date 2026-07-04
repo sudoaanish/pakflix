@@ -3,15 +3,13 @@ package org.jellyfin.androidtv.update
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import androidx.core.content.FileProvider
-import com.squareup.moshi.Moshi
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jellyfin.androidtv.BuildConfig
+import org.json.JSONObject
 import timber.log.Timber
 import java.io.File
 import java.io.FileOutputStream
@@ -19,11 +17,6 @@ import java.io.FileOutputStream
 object UpdateManager {
     private const val GITHUB_RELEASES_URL = "https://api.github.com/repos/sudoaanish/pakflix/releases/latest"
     private val httpClient by lazy { OkHttpClient() }
-    private val moshi by lazy {
-        Moshi.Builder()
-            .add(KotlinJsonAdapterFactory())
-            .build()
-    }
 
     suspend fun checkForUpdates(context: Context, onUpdateAvailable: (release: GitHubRelease) -> Unit) {
         withContext(Dispatchers.IO) {
@@ -36,9 +29,30 @@ object UpdateManager {
                 val response = httpClient.newCall(request).execute()
                 if (!response.isSuccessful) return@withContext
 
-                val json = response.body?.string() ?: return@withContext
-                val adapter = moshi.adapter(GitHubRelease::class.java)
-                val release = adapter.fromJson(json) ?: return@withContext
+                val jsonString = response.body?.string() ?: return@withContext
+                val jsonObject = JSONObject(jsonString)
+
+                val tagName = jsonObject.optString("tag_name", "")
+                val releaseName = jsonObject.optString("name", null)
+                val releaseBody = jsonObject.optString("body", null)
+
+                val assetsList = mutableListOf<GitHubAsset>()
+                val assetsArray = jsonObject.optJSONArray("assets")
+                if (assetsArray != null) {
+                    for (i in 0 until assetsArray.length()) {
+                        val assetObj = assetsArray.getJSONObject(i)
+                        val assetName = assetObj.optString("name", "")
+                        val downloadUrl = assetObj.optString("browser_download_url", "")
+                        assetsList.add(GitHubAsset(name = assetName, downloadUrl = downloadUrl))
+                    }
+                }
+
+                val release = GitHubRelease(
+                    tagName = tagName,
+                    name = releaseName,
+                    body = releaseBody,
+                    assets = assetsList
+                )
 
                 val latestVersion = release.tagName.removePrefix("v").trim()
                 val currentVersion = BuildConfig.VERSION_NAME.removePrefix("v").trim()
