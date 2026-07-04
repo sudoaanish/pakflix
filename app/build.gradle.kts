@@ -1,3 +1,9 @@
+import org.gradle.api.GradleException
+import java.io.File
+import java.io.FileInputStream
+import java.security.KeyStore
+import java.security.MessageDigest
+
 plugins {
 	alias(libs.plugins.aboutlibraries)
 	alias(libs.plugins.android.application)
@@ -15,8 +21,8 @@ android {
 
 		// Release version
 		applicationId = "com.pakflix.tv"
-		versionName = "0.2.1"
-		versionCode = 201
+		versionName = "0.2.3"
+		versionCode = 203
 	}
 
 	buildFeatures {
@@ -31,15 +37,41 @@ android {
 	}
 
 	signingConfigs {
-		val projectKeystore = file("pakflix.keystore")
-		val keystoreFile = getProperty("keystore.file") ?: if (projectKeystore.exists()) projectKeystore.absolutePath else null
-		val keystorePassword = getProperty("keystore.password") ?: "pakflix123"
-		val signingKeyAlias = getProperty("signing.key.alias") ?: "pakflix"
-		val signingKeyPassword = getProperty("signing.key.password") ?: "pakflix123"
+		val canonicalReleaseSignerSha256 = "359dde3161d91c47a020d2ed40a2b2a223272ac5cfc23cba8d35636759830c51"
+		val projectKeystore = rootProject.file("app/pakflix.keystore")
+		val configuredKeystoreFile = getProperty("keystore.file")?.let(::file)
+		val keystoreFile = configuredKeystoreFile ?: projectKeystore.takeIf { it.exists() }
+		val usingLocalFallback = configuredKeystoreFile == null && keystoreFile == projectKeystore
+		val keystorePassword = getProperty("keystore.password") ?: if (usingLocalFallback) "pakflix123" else null
+		val signingKeyAlias = getProperty("signing.key.alias") ?: if (usingLocalFallback) "pakflix" else null
+		val signingKeyPassword = getProperty("signing.key.password") ?: if (usingLocalFallback) "pakflix123" else null
 
-		if (keystoreFile != null) {
+		fun File.certificateSha256(storePassword: String, alias: String): String {
+			val password = storePassword.toCharArray()
+			val keyStore = listOf("PKCS12", "JKS")
+				.firstNotNullOfOrNull { type ->
+					runCatching {
+						KeyStore.getInstance(type).apply {
+							FileInputStream(this@certificateSha256).use { load(it, password) }
+						}
+					}.getOrNull()
+				} ?: throw GradleException("Unable to read release keystore")
+
+			val certificate = keyStore.getCertificate(alias)
+				?: throw GradleException("Release signing key alias was not found in keystore")
+
+			return MessageDigest.getInstance("SHA-256")
+				.digest(certificate.encoded)
+				.joinToString("") { "%02x".format(it) }
+		}
+
+		if (keystoreFile != null && keystorePassword != null && signingKeyAlias != null && signingKeyPassword != null) {
+			val signerSha256 = keystoreFile.certificateSha256(keystorePassword, signingKeyAlias)
+			if (signerSha256 != canonicalReleaseSignerSha256) {
+				throw GradleException("Release keystore signer does not match the canonical PAKFLIX signer")
+			}
 			create("release") {
-				storeFile = file(keystoreFile)
+				storeFile = keystoreFile
 				storePassword = keystorePassword
 				keyAlias = signingKeyAlias
 				keyPassword = signingKeyPassword
@@ -68,21 +100,28 @@ android {
 
 			buildConfigField("boolean", "DEVELOPMENT", "false")
 
-			signingConfig = signingConfigs.findByName("release") ?: signingConfigs.findByName("debug")
+			signingConfig = signingConfigs.findByName("release")
 		}
 
 		debug {
+			applicationIdSuffix = ".debug"
+			versionNameSuffix = "-debug"
+
 			// Set package names used in various XML files
-			resValue("string", "app_id", "com.pakflix.tv")
-			resValue("string", "app_search_suggest_authority", "com.pakflix.tv.content")
-			resValue("string", "app_search_suggest_intent_data", "content://com.pakflix.tv.content/intent")
+			resValue("string", "app_id", "com.pakflix.tv.debug")
+			resValue("string", "app_search_suggest_authority", "com.pakflix.tv.debug.content")
+			resValue("string", "app_search_suggest_intent_data", "content://com.pakflix.tv.debug.content/intent")
 
 			// Set flavored application name
 			resValue("string", "app_name", "@string/app_name_release")
 
 			buildConfigField("boolean", "DEVELOPMENT", "false")
+		}
+	}
 
-			signingConfig = signingConfigs.findByName("release") ?: signingConfigs.findByName("debug")
+	gradle.taskGraph.whenReady {
+		if (allTasks.any { it.name.contains("Release") } && signingConfigs.findByName("release") == null) {
+			throw GradleException("Release signing is not configured. Provide keystore.file, keystore.password, signing.key.alias, and signing.key.password.")
 		}
 	}
 

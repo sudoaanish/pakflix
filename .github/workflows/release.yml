@@ -11,6 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      EXPECTED_PACKAGE: com.pakflix.tv
+      EXPECTED_VERSION_CODE: '203'
+      EXPECTED_SIGNER_SHA256: 359dde3161d91c47a020d2ed40a2b2a223272ac5cfc23cba8d35636759830c51
+      RELEASE_APK: app/build/outputs/apk/release/pakflix-release.apk
+      RELEASE_ASSET: release_assets/pakflix-v0.2.3-release.apk
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -25,18 +31,58 @@ jobs:
       - name: Grant Execute Permission for Gradlew
         run: chmod +x gradlew
 
+      - name: Decode PAKFLIX signing keystore
+        run: |
+          if [ -z "${{ secrets.PAKFLIX_KEYSTORE_BASE64 }}" ]; then
+            echo "PAKFLIX_KEYSTORE_BASE64 is required"
+            exit 1
+          fi
+          echo "${{ secrets.PAKFLIX_KEYSTORE_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/pakflix.keystore"
+
       - name: Build Release APK
-        run: ./gradlew :app:assembleRelease --no-daemon
+        run: |
+          ./gradlew :app:assembleRelease --no-daemon \
+            -Pkeystore.file="$RUNNER_TEMP/pakflix.keystore" \
+            -Pkeystore.password="${{ secrets.PAKFLIX_KEYSTORE_PASSWORD }}" \
+            -Psigning.key.alias="${{ secrets.PAKFLIX_KEY_ALIAS }}" \
+            -Psigning.key.password="${{ secrets.PAKFLIX_KEY_PASSWORD }}"
+
+      - name: Verify Release APK
+        run: |
+          set -euo pipefail
+
+          if [ ! -f "$RELEASE_APK" ]; then
+            echo "Expected release APK was not found: $RELEASE_APK"
+            exit 1
+          fi
+
+          AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+
+          BADGING="$("$AAPT" dump badging "$RELEASE_APK")"
+          PACKAGE="$(echo "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+          VERSION_CODE="$(echo "$BADGING" | sed -n "s/^package:.* versionCode='\([^']*\)'.*/\1/p")"
+          DEBUGGABLE="$("$AAPT" dump xmltree "$RELEASE_APK" AndroidManifest.xml | grep -c 'android:debuggable' || true)"
+          SIGNER_SHA256="$("$APKSIGNER" verify --print-certs "$RELEASE_APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+
+          echo "Package: $PACKAGE"
+          echo "Version code: $VERSION_CODE"
+          echo "Signer SHA-256: $SIGNER_SHA256"
+
+          test "$PACKAGE" = "$EXPECTED_PACKAGE"
+          test "$VERSION_CODE" = "$EXPECTED_VERSION_CODE"
+          test "$SIGNER_SHA256" = "$EXPECTED_SIGNER_SHA256"
+          test "$DEBUGGABLE" = "0"
 
       - name: Locate & Package Release APK
         run: |
           mkdir -p release_assets
-          find app/build -name "*.apk" -exec cp {} release_assets/pakflix.apk \;
+          cp "$RELEASE_APK" "$RELEASE_ASSET"
 
       - name: Create GitHub Release & Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          files: release_assets/*.apk
+          files: ${{ env.RELEASE_ASSET }}
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
