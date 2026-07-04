@@ -86,12 +86,20 @@ class MainActivity : FragmentActivity() {
 					.setTitle("PAKFLIX Update Available")
 					.setMessage("A new version (${release.tagName}) of PAKFLIX is available. Would you like to update now?")
 					.setPositiveButton("Update Now") { _, _ ->
+						val progressDialog = android.app.ProgressDialog(this@MainActivity).apply {
+							setTitle("Downloading PAKFLIX Update")
+							setMessage("Please wait...")
+							setProgressStyle(android.app.ProgressDialog.STYLE_HORIZONTAL)
+							max = 100
+							setCancelable(false)
+							show()
+						}
 						lifecycleScope.launchWhenResumed {
 							org.jellyfin.androidtv.update.UpdateManager.downloadAndInstallUpdate(
 								this@MainActivity,
 								apkAsset.downloadUrl
 							) { progress ->
-								Toast.makeText(this@MainActivity, "Downloading Update: $progress%", Toast.LENGTH_SHORT).show()
+								progressDialog.progress = progress
 							}
 						}
 					}

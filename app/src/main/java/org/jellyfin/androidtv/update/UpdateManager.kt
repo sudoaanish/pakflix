@@ -85,16 +85,20 @@ object UpdateManager {
 
                 body.byteStream().use { input ->
                     FileOutputStream(apkFile).use { output ->
-                        val buffer = ByteArray(8192)
+                        val buffer = ByteArray(65536)
                         var downloaded = 0L
+                        var lastReportedPercent = -1
                         var read: Int
                         while (input.read(buffer).also { read = it } != -1) {
                             output.write(buffer, 0, read)
                             downloaded += read
                             if (contentLength > 0) {
                                 val progress = ((downloaded * 100) / contentLength).toInt()
-                                withContext(Dispatchers.Main) {
-                                    onProgress(progress)
+                                if (progress != lastReportedPercent) {
+                                    lastReportedPercent = progress
+                                    withContext(Dispatchers.Main) {
+                                        onProgress(progress)
+                                    }
                                 }
                             }
                         }
