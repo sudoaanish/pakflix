@@ -76,6 +76,28 @@ class MainActivity : FragmentActivity() {
 				}
 			}
 		}
+
+		// Auto-Updater Check on App Main Screen
+		lifecycleScope.launchWhenResumed {
+			org.jellyfin.androidtv.update.UpdateManager.checkForUpdates(this@MainActivity) { release ->
+				val apkAsset = release.assets.find { it.name.endsWith(".apk", ignoreCase = true) } ?: return@checkForUpdates
+				androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+					.setTitle("PAKFLIX Update Available")
+					.setMessage("A new version (${release.tagName}) of PAKFLIX is available. Would you like to update now?")
+					.setPositiveButton("Update Now") { _, _ ->
+						lifecycleScope.launchWhenResumed {
+							org.jellyfin.androidtv.update.UpdateManager.downloadAndInstallUpdate(
+								this@MainActivity,
+								apkAsset.downloadUrl
+							) { progress ->
+								Toast.makeText(this@MainActivity, "Downloading Update: $progress%", Toast.LENGTH_SHORT).show()
+							}
+						}
+					}
+					.setNegativeButton("Later", null)
+					.show()
+			}
+		}
 	}
 
 	override fun onResume() {
