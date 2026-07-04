@@ -31,12 +31,13 @@ android {
 	}
 
 	signingConfigs {
-		val keystoreFile = getProperty("keystore.file")
-		val keystorePassword = getProperty("keystore.password")
-		val signingKeyAlias = getProperty("signing.key.alias")
-		val signingKeyPassword = getProperty("signing.key.password")
+		val projectKeystore = file("pakflix.keystore")
+		val keystoreFile = getProperty("keystore.file") ?: if (projectKeystore.exists()) projectKeystore.absolutePath else null
+		val keystorePassword = getProperty("keystore.password") ?: "pakflix123"
+		val signingKeyAlias = getProperty("signing.key.alias") ?: "pakflix"
+		val signingKeyPassword = getProperty("signing.key.password") ?: "pakflix123"
 
-		if (keystoreFile != null && keystorePassword != null && signingKeyAlias != null && signingKeyPassword != null) {
+		if (keystoreFile != null) {
 			create("release") {
 				storeFile = file(keystoreFile)
 				storePassword = keystorePassword
@@ -67,7 +68,7 @@ android {
 
 			buildConfigField("boolean", "DEVELOPMENT", "false")
 
-			signingConfig = signingConfigs.findByName("debug")
+			signingConfig = signingConfigs.findByName("release") ?: signingConfigs.findByName("debug")
 		}
 
 		debug {
@@ -80,6 +81,8 @@ android {
 			resValue("string", "app_name", "@string/app_name_release")
 
 			buildConfigField("boolean", "DEVELOPMENT", "false")
+
+			signingConfig = signingConfigs.findByName("release") ?: signingConfigs.findByName("debug")
 		}
 	}
 
