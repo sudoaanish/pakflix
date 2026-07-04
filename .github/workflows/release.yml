@@ -13,10 +13,10 @@ jobs:
       contents: write
     env:
       EXPECTED_PACKAGE: com.pakflix.tv
-      EXPECTED_VERSION_CODE: '204'
+      EXPECTED_VERSION_CODE: '205'
       EXPECTED_SIGNER_SHA256: 359dde3161d91c47a020d2ed40a2b2a223272ac5cfc23cba8d35636759830c51
       RELEASE_APK: app/build/outputs/apk/release/pakflix-release.apk
-      RELEASE_ASSET: release_assets/pakflix-v0.2.4-release.apk
+      RELEASE_ASSET: release_assets/pakflix-v0.2.5-release.apk
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -66,7 +66,8 @@ jobs:
           APKSIGNER_OUTPUT="$("$APKSIGNER" verify --print-certs "$RELEASE_APK" 2>&1)"
           echo "$APKSIGNER_OUTPUT"
           SIGNER_SHA256="$(echo "$APKSIGNER_OUTPUT" \
-            | awk -F': ' 'tolower($0) ~ /certificate sha-256 digest/ { print $2; exit }' \
+            | sed -nE 's/.*certificate SHA-256 digest:[[:space:]]*([0-9A-Fa-f:]+).*/\1/ip' \
+            | head -n 1 \
             | tr -d ':' \
             | tr '[:upper:]' '[:lower:]')"
 
