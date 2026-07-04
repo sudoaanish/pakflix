@@ -87,8 +87,8 @@ class MainActivity : FragmentActivity() {
 					.setMessage("A new version (${release.tagName}) of PAKFLIX is available. Would you like to update now?")
 					.setPositiveButton("Update Now") { _, _ ->
 						val progressDialog = android.app.ProgressDialog(this@MainActivity).apply {
-							setTitle("Downloading PAKFLIX Update")
-							setMessage("Please wait...")
+							setTitle("PAKFLIX Update")
+							setMessage("Downloading update, please wait...")
 							setProgressStyle(android.app.ProgressDialog.STYLE_HORIZONTAL)
 							max = 100
 							setCancelable(false)
@@ -100,6 +100,7 @@ class MainActivity : FragmentActivity() {
 								apkAsset.downloadUrl
 							) { progress ->
 								progressDialog.progress = progress
+								if (progress >= 100) progressDialog.dismiss()
 							}
 						}
 					}

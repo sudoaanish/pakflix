@@ -80,22 +80,23 @@ object UpdateManager {
                 val body = response.body ?: return@withContext
                 val contentLength = body.contentLength()
 
-                val apkFile = File(context.cacheDir, "pakflix.apk")
+                val downloadDir = context.externalCacheDir ?: context.cacheDir
+                val apkFile = File(downloadDir, "pakflix.apk")
                 if (apkFile.exists()) apkFile.delete()
 
                 body.byteStream().use { input ->
                     FileOutputStream(apkFile).use { output ->
                         val buffer = ByteArray(65536)
                         var downloaded = 0L
-                        var lastReportedPercent = -1
                         var read: Int
+                        var lastReportedProgress = -1
                         while (input.read(buffer).also { read = it } != -1) {
                             output.write(buffer, 0, read)
                             downloaded += read
                             if (contentLength > 0) {
                                 val progress = ((downloaded * 100) / contentLength).toInt()
-                                if (progress != lastReportedPercent) {
-                                    lastReportedPercent = progress
+                                if (progress != lastReportedProgress) {
+                                    lastReportedProgress = progress
                                     withContext(Dispatchers.Main) {
                                         onProgress(progress)
                                     }
