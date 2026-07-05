@@ -79,6 +79,7 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
     private FilterOptions mFilters;
 
     private EmptyResponse mRetrieveFinishedListener;
+    private EmptyResponse mNextRetrieveFinishedListener;
 
     private ChangeTriggerType[] reRetrieveTriggers = new ChangeTriggerType[]{};
     private Instant lastFullRetrieve;
@@ -538,6 +539,10 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
     }
 
     public boolean ReRetrieveIfNeeded() {
+        return ReRetrieveIfNeeded(null);
+    }
+
+    public boolean ReRetrieveIfNeeded(@Nullable EmptyResponse nextRetrieveFinishedListener) {
         if (reRetrieveTriggers == null) {
             return false;
         }
@@ -563,6 +568,7 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
 
         if (retrieve) {
             Timber.i("Re-retrieving row of type %s", queryType.toString());
+            mNextRetrieveFinishedListener = nextRetrieveFinishedListener;
             Retrieve();
         }
 
@@ -717,6 +723,12 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
         if (mRetrieveFinishedListener != null) {
             if (exception == null) mRetrieveFinishedListener.onResponse();
             else mRetrieveFinishedListener.onError(exception);
+        }
+        if (mNextRetrieveFinishedListener != null) {
+            EmptyResponse listener = mNextRetrieveFinishedListener;
+            mNextRetrieveFinishedListener = null;
+            if (exception == null) listener.onResponse();
+            else listener.onError(exception);
         }
     }
 

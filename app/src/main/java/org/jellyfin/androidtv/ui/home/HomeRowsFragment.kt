@@ -3,6 +3,8 @@ package org.jellyfin.androidtv.ui.home
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
+import androidx.leanback.widget.HorizontalGridView
 import androidx.leanback.app.RowsSupportFragment
 import androidx.leanback.widget.ListRow
 import androidx.leanback.widget.OnItemViewClickedListener
@@ -50,6 +52,7 @@ import org.jellyfin.androidtv.ui.presentation.CardPresenter
 import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter
 import org.jellyfin.androidtv.ui.presentation.PositionableListRowPresenter
 import org.jellyfin.androidtv.util.KeyProcessor
+import org.jellyfin.androidtv.util.apiclient.EmptyResponse
 import org.jellyfin.playback.core.PlaybackManager
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.sockets.subscribe
@@ -57,6 +60,7 @@ import org.jellyfin.sdk.model.api.LibraryChangedMessage
 import org.jellyfin.sdk.model.api.UserDataChangedMessage
 import org.koin.android.ext.android.inject
 import timber.log.Timber
+import java.time.Instant
 import kotlin.time.Duration.Companion.seconds
 
 class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyListener {
@@ -80,6 +84,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private var currentItem: BaseRowItem? = null
 	private var currentRow: ListRow? = null
 	private var justLoaded = true
+	private var lastHandledPlaybackRefresh: Instant? = null
+	private var resetResumeRowWhenAttached = false
 
 	// Special rows
 	private val notificationsRow by lazy { NotificationsHomeFragmentRow(lifecycleScope, notificationsRepository) }
@@ -196,8 +202,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 		if (!justLoaded) {
 			//Re-retrieve anything that needs it but delay slightly so we don't take away gui landing
+			val playbackRefresh = consumePlaybackRefreshTimestamp()
 			refreshCurrentItem()
-			refreshRows()
+			refreshRows(resetResumeRowPosition = playbackRefresh != null)
 		} else {
 			justLoaded = false
 		}
@@ -214,7 +221,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		nowPlaying.update(requireContext(), adapter as MutableObjectAdapter<Row>)
 	}
 
-	private fun refreshRows(force: Boolean = false, delayed: Boolean = true) {
+	private fun refreshRows(
+		force: Boolean = false,
+		delayed: Boolean = true,
+		resetResumeRowPosition: Boolean = false,
+	) {
 		val activeRowIndex = selectedPosition
 		val activeRow = adapter.get(activeRowIndex) as? ListRow
 		val activeItemIndex = (activeRow?.adapter as? ItemRowAdapter)?.indexOf(currentItem) ?: -1
@@ -225,7 +236,17 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			repeat(adapter.size()) { i ->
 				val rowAdapter = (adapter[i] as? ListRow)?.adapter as? ItemRowAdapter
 				if (force) rowAdapter?.Retrieve()
-				else rowAdapter?.ReRetrieveIfNeeded()
+				else if (resetResumeRowPosition && rowAdapter?.queryType == QueryType.Resume) {
+					rowAdapter.ReRetrieveIfNeeded(object : EmptyResponse(lifecycle) {
+						override fun onResponse() {
+							resetRowPositionToStart(i)
+						}
+
+						override fun onError(exception: Exception) {
+							Timber.w(exception, "Unable to refresh Continue Watching before resetting row position")
+						}
+					})
+				} else rowAdapter?.ReRetrieveIfNeeded()
 			}
 
 			withContext(Dispatchers.Main) {
@@ -234,6 +255,54 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				}
 			}
 		}
+	}
+
+	private fun consumePlaybackRefreshTimestamp(): Instant? {
+		val latestPlayback = listOfNotNull(
+			dataRefreshService.lastPlayback,
+			dataRefreshService.lastMoviePlayback,
+			dataRefreshService.lastTvPlayback,
+		).maxOrNull() ?: return null
+
+		val lastHandled = lastHandledPlaybackRefresh
+		if (lastHandled != null && !latestPlayback.isAfter(lastHandled)) return null
+
+		lastHandledPlaybackRefresh = latestPlayback
+		return latestPlayback
+	}
+
+	private fun resetRowPositionToStart(rowIndex: Int) {
+		view?.post {
+			val row = adapter.get(rowIndex) as? ListRow ?: return@post
+			val rowAdapter = row.adapter as? ItemRowAdapter ?: return@post
+			if (rowAdapter.queryType != QueryType.Resume || rowAdapter.size() == 0) return@post
+
+			val rowView = verticalGridView?.findViewHolderForAdapterPosition(rowIndex)?.itemView
+			val horizontalGrid = rowView?.findDescendant(HorizontalGridView::class.java)
+			if (horizontalGrid == null) {
+				Timber.i("Continue Watching row is not attached; skipping horizontal position reset")
+				resetResumeRowWhenAttached = true
+				return@post
+			}
+
+			Timber.i("Resetting Continue Watching row horizontal position to 0 after playback refresh")
+			horizontalGrid.scrollToPosition(0)
+			horizontalGrid.setSelectedPosition(0)
+			resetResumeRowWhenAttached = false
+		}
+	}
+
+	private fun <T : View> View.findDescendant(type: Class<T>): T? {
+		if (type.isInstance(this)) return type.cast(this)
+		if (this !is ViewGroup) return null
+
+		for (i in 0 until childCount) {
+			val child = getChildAt(i)
+			val match = child.findDescendant(type)
+			if (match != null) return match
+		}
+
+		return null
 	}
 
 	private fun refreshCurrentItem() {
@@ -290,6 +359,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 				val itemRowAdapter = row.adapter as? ItemRowAdapter
 				itemRowAdapter?.loadMoreItemsIfNeeded(itemRowAdapter.indexOf(item))
+				if (resetResumeRowWhenAttached && itemRowAdapter?.queryType == QueryType.Resume) {
+					resetRowPositionToStart(selectedPosition)
+				}
 
 				backgroundService.setBackground(item.baseItem)
 			}
