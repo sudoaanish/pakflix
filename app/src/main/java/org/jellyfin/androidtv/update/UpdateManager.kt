@@ -1,6 +1,7 @@
 package org.jellyfin.androidtv.update
 
 import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
@@ -8,6 +9,7 @@ import android.content.pm.PackageManager
 import android.content.pm.Signature
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -35,6 +37,7 @@ object UpdateManager {
     private const val MESSAGE_WRONG_SIGNER = "Downloaded update is signed with the wrong certificate and was blocked."
     private const val MESSAGE_INSTALL_PERMISSION_MISSING = "Pakflix does not have permission to install updates."
     private const val MESSAGE_INSTALLER_FAILED = "Package installer could not be opened."
+    private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
     private val httpClient by lazy { OkHttpClient() }
 
     data class UpdateInstallResult(
@@ -172,27 +175,108 @@ object UpdateManager {
     }
 
     private fun installApk(context: Context, apkFile: File) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
-            Timber.e("Pakflix update blocked: %s", MESSAGE_INSTALL_PERMISSION_MISSING)
-            throw UpdateException(MESSAGE_INSTALL_PERMISSION_MISSING)
+        val packageManager = context.packageManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val canRequestPackageInstalls = packageManager.canRequestPackageInstalls()
+            Timber.i("Pakflix installer permission: canRequestPackageInstalls=%s", canRequestPackageInstalls)
+            if (!canRequestPackageInstalls) {
+                Timber.e("Pakflix update blocked: %s", MESSAGE_INSTALL_PERMISSION_MISSING)
+                openUnknownSourcesSettings(context)
+                throw UpdateException(MESSAGE_INSTALL_PERMISSION_MISSING)
+            }
         }
 
-        val uri: Uri = FileProvider.getUriForFile(
+        val apkUri: Uri = FileProvider.getUriForFile(
             context,
             "${context.packageName}.provider",
             apkFile
         )
 
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+        val installIntent = buildInstallIntent(context, apkUri)
+        val viewIntent = buildViewInstallIntent(context, apkUri)
+
+        try {
+            launchInstallerIntent(context, installIntent, "ACTION_INSTALL_PACKAGE", apkUri)
+            return
+        } catch (e: ActivityNotFoundException) {
+            Timber.w(e, "Pakflix ACTION_INSTALL_PACKAGE handoff failed; falling back to ACTION_VIEW")
+        } catch (e: SecurityException) {
+            Timber.w(e, "Pakflix ACTION_INSTALL_PACKAGE handoff security failure; falling back to ACTION_VIEW")
         }
 
         try {
-            context.startActivity(intent)
-            Timber.i("Pakflix package installer intent launched")
+            launchInstallerIntent(context, viewIntent, "ACTION_VIEW", apkUri)
         } catch (e: ActivityNotFoundException) {
             throw UpdateException(MESSAGE_INSTALLER_FAILED, e)
+        } catch (e: SecurityException) {
+            throw UpdateException(MESSAGE_INSTALLER_FAILED, e)
+        }
+    }
+
+    private fun buildInstallIntent(context: Context, apkUri: Uri): Intent {
+        return Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+            setDataAndType(apkUri, APK_MIME_TYPE)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+            clipData = ClipData.newUri(context.contentResolver, "Pakflix update", apkUri)
+            putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+            putExtra(Intent.EXTRA_RETURN_RESULT, true)
+        }
+    }
+
+    private fun buildViewInstallIntent(context: Context, apkUri: Uri): Intent {
+        return Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(apkUri, APK_MIME_TYPE)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+            clipData = ClipData.newUri(context.contentResolver, "Pakflix update", apkUri)
+        }
+    }
+
+    private fun launchInstallerIntent(context: Context, intent: Intent, strategy: String, apkUri: Uri) {
+        val candidates = context.packageManager.queryInstallerCandidates(intent)
+        Timber.i(
+            "Pakflix installer handoff prepared: strategy=%s action=%s mime=%s uriScheme=%s flags=0x%s clipData=%s candidates=%s",
+            strategy,
+            intent.action,
+            intent.type,
+            apkUri.scheme,
+            intent.flags.toString(16),
+            intent.clipData != null,
+            candidates.joinToString(",") { it.label }.ifBlank { "none" }
+        )
+
+        candidates.map { it.packageName }.distinct().forEach { packageName ->
+            context.grantUriPermission(packageName, apkUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        context.startActivity(intent)
+        Timber.i("Pakflix package installer intent launched: strategy=%s", strategy)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun PackageManager.queryInstallerCandidates(intent: Intent): List<InstallerCandidate> {
+        return queryIntentActivities(intent, 0)
+            .mapNotNull { resolveInfo ->
+                val activityInfo = resolveInfo.activityInfo ?: return@mapNotNull null
+                InstallerCandidate(
+                    packageName = activityInfo.packageName,
+                    activityName = activityInfo.name
+                )
+            }
+    }
+
+    private fun openUnknownSourcesSettings(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
+        val settingsIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+            data = Uri.parse("package:${context.packageName}")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+
+        try {
+            context.startActivity(settingsIntent)
+            Timber.i("Pakflix opened unknown app sources settings")
+        } catch (e: ActivityNotFoundException) {
+            Timber.w(e, "Pakflix could not open unknown app sources settings")
         }
     }
 
@@ -399,6 +483,13 @@ object UpdateManager {
         val sha256s: List<String>,
         val source: String
     )
+
+    private data class InstallerCandidate(
+        val packageName: String,
+        val activityName: String
+    ) {
+        val label: String = "$packageName/$activityName"
+    }
 
     private class UpdateException(message: String, cause: Throwable? = null) : Exception(message, cause)
 }
