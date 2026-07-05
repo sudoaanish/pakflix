@@ -31,6 +31,7 @@ object UpdateManager {
     private const val MESSAGE_APK_INVALID = "Downloaded update APK could not be read."
     private const val MESSAGE_WRONG_PACKAGE = "Downloaded update is not a Pakflix APK."
     private const val MESSAGE_NOT_NEWER = "Downloaded update is not newer than the installed app."
+    private const val MESSAGE_SIGNER_UNREADABLE = "Downloaded update signing certificate could not be read."
     private const val MESSAGE_WRONG_SIGNER = "Downloaded update is signed with the wrong certificate and was blocked."
     private const val MESSAGE_INSTALL_PERMISSION_MISSING = "Pakflix does not have permission to install updates."
     private const val MESSAGE_INSTALLER_FAILED = "Package installer could not be opened."
@@ -242,12 +243,17 @@ object UpdateManager {
         val installedVersionCode = packageManager
             .getPackageInfo(context.packageName, 0)
             .versionCodeCompat()
-        val signerSha256s = downloadedPackage.signerSha256s()
+        val signerResult = packageManager.readArchiveSignerSha256s(apkFile)
+        val signerSha256s = signerResult.sha256s
 
         Timber.i(
-            "Pakflix downloaded APK metadata: package=%s versionCode=%d signerSha256=%s",
+            "Pakflix downloaded APK metadata: file=%s bytes=%d package=%s versionCode=%d signerCount=%d signerSource=%s signerSha256=%s",
+            apkFile.name,
+            apkFile.length(),
             downloadedPackage.packageName,
             downloadedVersionCode,
+            signerSha256s.size,
+            signerResult.source,
             signerSha256s.joinToString(",")
         )
 
@@ -266,8 +272,18 @@ object UpdateManager {
             throw UpdateException(MESSAGE_NOT_NEWER)
         }
 
+        if (signerSha256s.isEmpty()) {
+            Timber.e("Pakflix update validation failed: %s", MESSAGE_SIGNER_UNREADABLE)
+            throw UpdateException(MESSAGE_SIGNER_UNREADABLE)
+        }
+
         if (EXPECTED_RELEASE_SIGNER_SHA256 !in signerSha256s) {
-            Timber.e("Pakflix update validation failed: %s", MESSAGE_WRONG_SIGNER)
+            Timber.e(
+                "Pakflix update validation failed: %s expected=%s found=%s",
+                MESSAGE_WRONG_SIGNER,
+                EXPECTED_RELEASE_SIGNER_SHA256,
+                signerSha256s.joinToString(",")
+            )
             throw UpdateException(MESSAGE_WRONG_SIGNER)
         }
 
@@ -302,6 +318,47 @@ object UpdateManager {
     }
 
     @Suppress("DEPRECATION")
+    private fun PackageManager.readArchiveSignerSha256s(apkFile: File): SignerReadResult {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val modernPackageInfo = getPackageArchiveInfo(
+                apkFile.absolutePath,
+                PackageManager.GET_SIGNING_CERTIFICATES
+            )
+            val modernSignatures = modernPackageInfo?.signingInfo?.let { signingInfo ->
+                if (signingInfo.hasMultipleSigners()) {
+                    signingInfo.apkContentsSigners
+                } else {
+                    signingInfo.signingCertificateHistory
+                }
+            }?.filterNotNull().orEmpty()
+
+            Timber.i("Pakflix APK signer read: source=modern signerCount=%d", modernSignatures.size)
+
+            if (modernSignatures.isNotEmpty()) {
+                return SignerReadResult(
+                    sha256s = modernSignatures.sha256s(),
+                    source = "modern"
+                )
+            }
+
+            Timber.w("Pakflix APK signer read returned no modern signers; retrying legacy archive signatures")
+        }
+
+        val legacyPackageInfo = getPackageArchiveInfo(
+            apkFile.absolutePath,
+            PackageManager.GET_SIGNATURES
+        )
+        val legacySignatures = legacyPackageInfo?.signatures?.filterNotNull().orEmpty()
+
+        Timber.i("Pakflix APK signer read: source=legacy signerCount=%d", legacySignatures.size)
+
+        return SignerReadResult(
+            sha256s = legacySignatures.sha256s(),
+            source = if (legacySignatures.isEmpty()) "none" else "legacy"
+        )
+    }
+
+    @Suppress("DEPRECATION")
     private fun PackageInfo.versionCodeCompat(): Long {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             longVersionCode
@@ -310,16 +367,8 @@ object UpdateManager {
         }
     }
 
-    @Suppress("DEPRECATION")
-    private fun PackageInfo.signerSha256s(): List<String> {
-        val apkSignatures: Array<Signature> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val info = signingInfo ?: return emptyList()
-            if (info.hasMultipleSigners()) info.apkContentsSigners else info.signingCertificateHistory
-        } else {
-            signatures ?: emptyArray()
-        }
-
-        return apkSignatures.map { signature ->
+    private fun Iterable<Signature>.sha256s(): List<String> {
+        return map { signature ->
             MessageDigest.getInstance("SHA-256")
                 .digest(signature.toByteArray())
                 .joinToString("") { "%02x".format(it) }
@@ -345,6 +394,11 @@ object UpdateManager {
             .joinToString("\n")
             .take(MAX_RELEASE_NOTES_LENGTH)
     }
+
+    private data class SignerReadResult(
+        val sha256s: List<String>,
+        val source: String
+    )
 
     private class UpdateException(message: String, cause: Throwable? = null) : Exception(message, cause)
 }
