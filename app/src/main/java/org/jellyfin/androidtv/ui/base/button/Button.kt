@@ -30,6 +30,8 @@ object ButtonDefaults {
 		focusedContentColor: Color = JellyfinTheme.colorScheme.onButtonFocused,
 		disabledContainerColor: Color = JellyfinTheme.colorScheme.buttonDisabled,
 		disabledContentColor: Color = JellyfinTheme.colorScheme.onButtonDisabled,
+		focusedBorderColor: Color = Color.Transparent,
+		focusedBorderWidth: androidx.compose.ui.unit.Dp = 0.dp,
 	) = ButtonColors(
 		containerColor = containerColor,
 		contentColor = contentColor,
@@ -37,6 +39,8 @@ object ButtonDefaults {
 		focusedContentColor = focusedContentColor,
 		disabledContainerColor = disabledContainerColor,
 		disabledContentColor = disabledContentColor,
+		focusedBorderColor = focusedBorderColor,
+		focusedBorderWidth = focusedBorderWidth,
 	)
 }
 

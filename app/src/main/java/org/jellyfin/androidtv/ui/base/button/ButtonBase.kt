@@ -2,6 +2,7 @@ package org.jellyfin.androidtv.ui.base.button
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -35,15 +36,16 @@ fun ButtonBase(
 	val interactionSource = interactionSource ?: remember { MutableInteractionSource() }
 	val focused by interactionSource.collectIsFocusedAsState()
 	val pressed by interactionSource.collectIsPressedAsState()
+	val showFocusBorder = enabled && (focused || pressed) && colors.focusedBorderWidth.value > 0f
 
-	val colors = when {
+	val currentColors = when {
 		!enabled -> colors.disabledContainerColor to colors.disabledContentColor
 		pressed -> colors.focusedContainerColor to colors.focusedContentColor
 		focused -> colors.focusedContainerColor to colors.focusedContentColor
 		else -> colors.containerColor to colors.contentColor
 	}
 
-	ProvideTextStyle(value = JellyfinTheme.typography.default.copy(fontSize = 14.sp, color = colors.second)) {
+	ProvideTextStyle(value = JellyfinTheme.typography.default.copy(fontSize = 14.sp, color = currentColors.second)) {
 		Box(
 			modifier = modifier
 				.combinedClickable(
@@ -54,7 +56,8 @@ fun ButtonBase(
 					onClick = onClick,
 					onLongClick = onLongClick,
 				)
-				.background(colors.first, shape)
+				.background(currentColors.first, shape)
+				.then(if (showFocusBorder) Modifier.border(colors.focusedBorderWidth, colors.focusedBorderColor, shape) else Modifier)
 				.clip(shape),
 			content = content,
 		)

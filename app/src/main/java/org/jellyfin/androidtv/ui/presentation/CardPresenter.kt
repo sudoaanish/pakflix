@@ -367,7 +367,8 @@ private fun CardViewHolderContent(
 				}
 			},
 			modifier = Modifier
-				.size(size)
+				.size(size),
+			focused = focused,
 		)
 	}
 

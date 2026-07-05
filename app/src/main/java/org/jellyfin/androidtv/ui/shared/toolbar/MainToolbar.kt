@@ -13,6 +13,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
@@ -84,6 +85,18 @@ private fun MainToolbar(
 	val activeButtonColors = ButtonDefaults.colors(
 		containerColor = JellyfinTheme.colorScheme.buttonActive,
 		contentColor = JellyfinTheme.colorScheme.onButtonActive,
+		focusedContainerColor = JellyfinTheme.colorScheme.buttonActive,
+		focusedContentColor = JellyfinTheme.colorScheme.onButtonActive,
+		focusedBorderColor = Color(0xFFE8F7EC),
+		focusedBorderWidth = 2.dp,
+	)
+	val toolbarButtonColors = ButtonDefaults.colors(
+		containerColor = Color.Transparent,
+		contentColor = JellyfinTheme.colorScheme.onButton,
+		focusedContainerColor = Color.Transparent,
+		focusedContentColor = JellyfinTheme.colorScheme.onButtonFocused,
+		focusedBorderColor = Color(0xFF2FA84F),
+		focusedBorderWidth = 2.dp,
 	)
 
 	Toolbar(
@@ -107,7 +120,7 @@ private fun MainToolbar(
 							activity?.finishAfterTransition()
 						}
 					},
-					colors = if (activeButton == MainToolbarActiveButton.User) activeButtonColors else ButtonDefaults.colors(),
+					colors = if (activeButton == MainToolbarActiveButton.User) activeButtonColors else toolbarButtonColors,
 					contentPadding = if (userImageVisible) PaddingValues(3.dp) else IconButtonDefaults.ContentPadding,
 				) {
 					ProfilePicture(
@@ -139,7 +152,7 @@ private fun MainToolbar(
 								)
 							}
 						},
-						colors = if (activeButton == MainToolbarActiveButton.Home) activeButtonColors else ButtonDefaults.colors(),
+						colors = if (activeButton == MainToolbarActiveButton.Home) activeButtonColors else toolbarButtonColors,
 						content = { Text(stringResource(R.string.lbl_home)) }
 					)
 					Button(
@@ -148,7 +161,7 @@ private fun MainToolbar(
 								navigationRepository.navigate(Destinations.search())
 							}
 						},
-						colors = if (activeButton == MainToolbarActiveButton.Search) activeButtonColors else ButtonDefaults.colors(),
+						colors = if (activeButton == MainToolbarActiveButton.Search) activeButtonColors else toolbarButtonColors,
 						content = { Text(stringResource(R.string.lbl_search)) }
 					)
 				}
@@ -158,6 +171,7 @@ private fun MainToolbar(
 			ToolbarButtons {
 				IconButton(
 					onClick = { settingsViewModel.show() },
+					colors = toolbarButtonColors,
 				) {
 					Icon(
 						imageVector = ImageVector.vectorResource(R.drawable.ic_settings),
