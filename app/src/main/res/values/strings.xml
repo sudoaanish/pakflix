@@ -295,7 +295,7 @@
     <string name="msg_live_tv_next">Load next %1$d hours?"</string>
     <string name="msg_live_tv_prev">Load prev %1$d hours?"</string>
     <string name="seek_error">Unable to seek</string>
-    <string name="player_error">Player error encountered. Will re-try…</string>
+    <string name="player_error">Playback issue detected. Trying a compatible stream...</string>
     <string name="too_many_errors">Too many errors. Giving up</string>
     <string name="subtitle_error">Unable to select subtitle</string>
     <string name="msg_no_items">No items to play</string>

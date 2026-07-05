@@ -34,6 +34,7 @@ import org.jellyfin.androidtv.ui.playback.overlay.action.CustomAction;
 import org.jellyfin.androidtv.ui.playback.overlay.action.FastForwardAction;
 import org.jellyfin.androidtv.ui.playback.overlay.action.GuideAction;
 import org.jellyfin.androidtv.ui.playback.overlay.action.PlayPauseAction;
+import org.jellyfin.androidtv.ui.playback.overlay.action.PlaybackInfoAction;
 import org.jellyfin.androidtv.ui.playback.overlay.action.PlaybackSpeedAction;
 import org.jellyfin.androidtv.ui.playback.overlay.action.PreviousLiveTvChannelAction;
 import org.jellyfin.androidtv.ui.playback.overlay.action.RecordAction;
@@ -60,6 +61,7 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
     private SelectAudioAction selectAudioAction;
     private ClosedCaptionsAction closedCaptionsAction;
     private SelectQualityAction selectQualityAction;
+    private PlaybackInfoAction playbackInfoAction;
     private PlaybackSpeedAction playbackSpeedAction;
     private ZoomAction zoomAction;
     private ChapterAction chapterAction;
@@ -198,6 +200,8 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
         closedCaptionsAction.setLabels(new String[]{context.getString(R.string.lbl_subtitle_track)});
         selectQualityAction = new SelectQualityAction(context, this, KoinJavaComponent.get(UserPreferences.class));
         selectQualityAction.setLabels(new String[]{context.getString(R.string.lbl_quality_profile)});
+        playbackInfoAction = new PlaybackInfoAction(context, this);
+        playbackInfoAction.setLabels(new String[]{context.getString(R.string.playback_info)});
         playbackSpeedAction = new PlaybackSpeedAction(context, this, playbackController);
         playbackSpeedAction.setLabels(new String[]{context.getString(R.string.lbl_playback_speed)});
         zoomAction = new ZoomAction(context, this);
@@ -282,6 +286,7 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
             secondaryActionsAdapter.add(selectQualityAction);
         }
 
+        secondaryActionsAdapter.add(playbackInfoAction);
         secondaryActionsAdapter.add(zoomAction);
     }
 
