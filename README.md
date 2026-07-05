@@ -12,6 +12,7 @@
 
 - **Android TV / Fire TV UI**: Leanback-based TV navigation with Compose-backed screens where the upstream app uses them.
 - **Media3 Playback**: Jellyfin playback modules on Media3 ExoPlayer, with HLS, okhttp datasource, ffmpeg decoder, and subtitle support.
+- **Playback Info Diagnostics**: In-player Playback Info report for Direct Play, Direct Stream, Transcode status, video/audio/subtitle stream details, safe transcode reason data when available, and logcat diagnostics via `PAKFLIX_PLAYBACK_DIAGNOSTICS`.
 - **GitHub Releases Updater**: In-app update checks against GitHub Releases, versioned APK asset selection, release notes in the prompt, and APK package/version/signer validation before installer launch.
 - **Pakflix Branding**: Pakflix app name, launcher banner, icon assets, package ID, and release/debug package separation.
 - **Server Session Persistence**: Stored server/session state for reconnecting without re-entering credentials.
@@ -38,18 +39,30 @@
 
 ---
 
+## Playback Diagnostics
+
+Pakflix v0.2.8 adds a Playback Info button to the TV playback controls. The report helps identify whether an item is playing through Direct Play, Direct Stream, or server transcoding, and shows available video, audio, subtitle, and session details.
+
+When available, the report can show safe transcode metadata such as `TranscodeReasons` and subtitle method without displaying full stream URLs or tokenized query strings. Opening Playback Info also writes a diagnostics block to logcat with the marker:
+
+```text
+PAKFLIX_PLAYBACK_DIAGNOSTICS
+```
+
+---
+
 ## Installation
 
 ### Direct Sideload via ADB
 
-Download the latest release APK from [GitHub Releases](https://github.com/sudoaanish/pakflix/releases). Release APKs use names like `pakflix-v0.2.7-release.apk`.
+Download the latest release APK from [GitHub Releases](https://github.com/sudoaanish/pakflix/releases). Release APKs use names like `pakflix-v0.2.8-release.apk`.
 
 ```bash
 # Connect to your Android TV / Fire TV device over Wi-Fi
 adb connect <DEVICE_IP_ADDRESS>:5555
 
 # Install PAKFLIX APK
-adb install -r pakflix-v0.2.7-release.apk
+adb install -r pakflix-v0.2.8-release.apk
 
 # Launch PAKFLIX
 adb shell am start -n com.pakflix.tv/org.jellyfin.androidtv.ui.startup.StartupActivity
