@@ -1,8 +1,13 @@
 package org.jellyfin.androidtv.update
 
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
+import android.content.pm.Signature
 import android.net.Uri
+import android.os.Build
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -13,28 +18,53 @@ import org.json.JSONObject
 import timber.log.Timber
 import java.io.File
 import java.io.FileOutputStream
+import java.security.MessageDigest
 
 object UpdateManager {
     private const val GITHUB_RELEASES_URL = "https://api.github.com/repos/sudoaanish/pakflix/releases/latest"
+    private const val EXPECTED_RELEASE_SIGNER_SHA256 = "359dde3161d91c47a020d2ed40a2b2a223272ac5cfc23cba8d35636759830c51"
+    private const val MAX_RELEASE_NOTES_LENGTH = 1000
+    private const val MESSAGE_NO_UPDATE = "No update available."
+    private const val MESSAGE_CHECK_FAILED = "GitHub latest release check failed."
+    private const val MESSAGE_NO_VALID_ASSET = "No valid Pakflix APK asset found."
+    private const val MESSAGE_DOWNLOAD_FAILED = "APK download failed."
+    private const val MESSAGE_APK_INVALID = "Downloaded update APK could not be read."
+    private const val MESSAGE_WRONG_PACKAGE = "Downloaded update is not a Pakflix APK."
+    private const val MESSAGE_NOT_NEWER = "Downloaded update is not newer than the installed app."
+    private const val MESSAGE_WRONG_SIGNER = "Downloaded update is signed with the wrong certificate and was blocked."
+    private const val MESSAGE_INSTALL_PERMISSION_MISSING = "Pakflix does not have permission to install updates."
+    private const val MESSAGE_INSTALLER_FAILED = "Package installer could not be opened."
     private val httpClient by lazy { OkHttpClient() }
 
-    suspend fun checkForUpdates(context: Context, onUpdateAvailable: (release: GitHubRelease) -> Unit) {
+    data class UpdateInstallResult(
+        val installerLaunched: Boolean,
+        val message: String? = null
+    )
+
+    suspend fun checkForUpdates(
+        context: Context,
+        onUpdateAvailable: (release: GitHubRelease) -> Unit,
+        onNoUpdate: (message: String) -> Unit = {},
+        onCheckFailed: (message: String) -> Unit = {}
+    ) {
         withContext(Dispatchers.IO) {
             try {
+                Timber.i("Pakflix update check started")
                 val request = Request.Builder()
                     .url(GITHUB_RELEASES_URL)
                     .header("User-Agent", "PAKFLIX-AndroidTV")
                     .build()
 
                 val response = httpClient.newCall(request).execute()
-                if (!response.isSuccessful) return@withContext
+                if (!response.isSuccessful) throw UpdateException(MESSAGE_CHECK_FAILED)
 
-                val jsonString = response.body?.string() ?: return@withContext
+                val jsonString = response.body?.string() ?: throw UpdateException(MESSAGE_CHECK_FAILED)
                 val jsonObject = JSONObject(jsonString)
 
                 val tagName = jsonObject.optString("tag_name", "")
-                val releaseName = jsonObject.optString("name", null)
-                val releaseBody = jsonObject.optString("body", null)
+                val releaseName = jsonObject.optString("name").takeIf { it.isNotBlank() }
+                val releaseBody = jsonObject.optString("body").takeIf { it.isNotBlank() }
+                Timber.i("Pakflix latest release tag found: %s", tagName)
 
                 val assetsList = mutableListOf<GitHubAsset>()
                 val assetsArray = jsonObject.optJSONArray("assets")
@@ -60,24 +90,43 @@ object UpdateManager {
                 Timber.d("PAKFLIX Update Check - Current: $currentVersion, Latest: $latestVersion")
 
                 if (isNewerVersion(currentVersion, latestVersion)) {
+                    val selectedAsset = selectReleaseAsset(release)
+                    val selectedRelease = release.copy(selectedAsset = selectedAsset)
                     withContext(Dispatchers.Main) {
-                        onUpdateAvailable(release)
+                        onUpdateAvailable(selectedRelease)
+                    }
+                } else {
+                    Timber.i("Pakflix update check finished: %s", MESSAGE_NO_UPDATE)
+                    withContext(Dispatchers.Main) {
+                        onNoUpdate(MESSAGE_NO_UPDATE)
                     }
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to check for PAKFLIX updates")
+                withContext(Dispatchers.Main) {
+                    onCheckFailed(e.message ?: MESSAGE_CHECK_FAILED)
+                }
             }
         }
     }
 
-    suspend fun downloadAndInstallUpdate(context: Context, downloadUrl: String, onProgress: (percent: Int) -> Unit) {
+    suspend fun downloadAndInstallUpdate(
+        context: Context,
+        asset: GitHubAsset,
+        onProgress: (percent: Int) -> Unit,
+        onResult: (result: UpdateInstallResult) -> Unit
+    ) {
         withContext(Dispatchers.IO) {
             try {
-                val request = Request.Builder().url(downloadUrl).build()
+                Timber.i("Pakflix update download started: %s", asset.name)
+                val request = Request.Builder()
+                    .url(asset.downloadUrl)
+                    .header("User-Agent", "PAKFLIX-AndroidTV")
+                    .build()
                 val response = httpClient.newCall(request).execute()
-                if (!response.isSuccessful) return@withContext
+                if (!response.isSuccessful) throw UpdateException(MESSAGE_DOWNLOAD_FAILED)
 
-                val body = response.body ?: return@withContext
+                val body = response.body ?: throw UpdateException(MESSAGE_DOWNLOAD_FAILED)
                 val contentLength = body.contentLength()
 
                 val downloadDir = context.externalCacheDir ?: context.cacheDir
@@ -106,16 +155,27 @@ object UpdateManager {
                     }
                 }
 
+                Timber.i("Pakflix update download finished: %s (%d bytes)", apkFile.absolutePath, apkFile.length())
+                validateDownloadedApk(context, apkFile)
                 withContext(Dispatchers.Main) {
                     installApk(context, apkFile)
+                    onResult(UpdateInstallResult(installerLaunched = true))
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to download and install PAKFLIX update")
+                withContext(Dispatchers.Main) {
+                    onResult(UpdateInstallResult(installerLaunched = false, message = e.message ?: MESSAGE_DOWNLOAD_FAILED))
+                }
             }
         }
     }
 
     private fun installApk(context: Context, apkFile: File) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
+            Timber.e("Pakflix update blocked: %s", MESSAGE_INSTALL_PERMISSION_MISSING)
+            throw UpdateException(MESSAGE_INSTALL_PERMISSION_MISSING)
+        }
+
         val uri: Uri = FileProvider.getUriForFile(
             context,
             "${context.packageName}.provider",
@@ -127,7 +187,91 @@ object UpdateManager {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
         }
 
-        context.startActivity(intent)
+        try {
+            context.startActivity(intent)
+            Timber.i("Pakflix package installer intent launched")
+        } catch (e: ActivityNotFoundException) {
+            throw UpdateException(MESSAGE_INSTALLER_FAILED, e)
+        }
+    }
+
+    fun buildUpdatePromptMessage(release: GitHubRelease): String {
+        val versionLabel = release.tagName.ifBlank { release.name ?: "new version" }
+        val notes = release.body.orEmpty().toPlainReleaseNotes()
+        return if (notes.isBlank()) {
+            "A new version ($versionLabel) of PAKFLIX is available."
+        } else {
+            "A new version ($versionLabel) of PAKFLIX is available.\n\nRelease notes:\n\n$notes"
+        }
+    }
+
+    private fun selectReleaseAsset(release: GitHubRelease): GitHubAsset {
+        val releaseVersion = release.tagName.removePrefix("v").trim()
+        val pakflixApks = release.assets.filter { asset ->
+            val name = asset.name.lowercase()
+            name.endsWith(".apk") &&
+                name.contains("pakflix") &&
+                !name.contains("debug") &&
+                asset.downloadUrl.isNotBlank()
+        }
+
+        val versionedAsset = pakflixApks.firstOrNull { asset ->
+            asset.name.lowercase().contains(releaseVersion.lowercase())
+        }
+
+        if (versionedAsset != null) {
+            Timber.i("Pakflix update asset selected: %s", versionedAsset.name)
+            return versionedAsset
+        }
+
+        if (pakflixApks.size == 1) {
+            Timber.w("Pakflix update using single non-debug APK asset without exact version match: %s", pakflixApks.single().name)
+            return pakflixApks.single()
+        }
+
+        Timber.e("Pakflix update asset selection failed for tag %s. Assets: %s", release.tagName, release.assets.map { it.name })
+        throw UpdateException(MESSAGE_NO_VALID_ASSET)
+    }
+
+    private fun validateDownloadedApk(context: Context, apkFile: File) {
+        val packageManager = context.packageManager
+        val downloadedPackage = packageManager.getPackageArchiveInfoCompat(apkFile)
+            ?: throw UpdateException(MESSAGE_APK_INVALID)
+
+        val downloadedVersionCode = downloadedPackage.versionCodeCompat()
+        val installedVersionCode = packageManager
+            .getPackageInfo(context.packageName, 0)
+            .versionCodeCompat()
+        val signerSha256s = downloadedPackage.signerSha256s()
+
+        Timber.i(
+            "Pakflix downloaded APK metadata: package=%s versionCode=%d signerSha256=%s",
+            downloadedPackage.packageName,
+            downloadedVersionCode,
+            signerSha256s.joinToString(",")
+        )
+
+        if (downloadedPackage.packageName != context.packageName) {
+            Timber.e("Pakflix update validation failed: %s", MESSAGE_WRONG_PACKAGE)
+            throw UpdateException(MESSAGE_WRONG_PACKAGE)
+        }
+
+        if (downloadedVersionCode <= installedVersionCode) {
+            Timber.e(
+                "Pakflix update validation failed: %s downloaded=%d installed=%d",
+                MESSAGE_NOT_NEWER,
+                downloadedVersionCode,
+                installedVersionCode
+            )
+            throw UpdateException(MESSAGE_NOT_NEWER)
+        }
+
+        if (EXPECTED_RELEASE_SIGNER_SHA256 !in signerSha256s) {
+            Timber.e("Pakflix update validation failed: %s", MESSAGE_WRONG_SIGNER)
+            throw UpdateException(MESSAGE_WRONG_SIGNER)
+        }
+
+        Timber.i("Pakflix downloaded APK validation passed")
     }
 
     private fun isNewerVersion(current: String, latest: String): Boolean {
@@ -146,4 +290,61 @@ object UpdateManager {
             false
         }
     }
+
+    @Suppress("DEPRECATION")
+    private fun PackageManager.getPackageArchiveInfoCompat(apkFile: File): PackageInfo? {
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            PackageManager.GET_SIGNATURES
+        }
+        return getPackageArchiveInfo(apkFile.absolutePath, flags)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun PackageInfo.versionCodeCompat(): Long {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            longVersionCode
+        } else {
+            versionCode.toLong()
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun PackageInfo.signerSha256s(): List<String> {
+        val apkSignatures: Array<Signature> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val info = signingInfo ?: return emptyList()
+            if (info.hasMultipleSigners()) info.apkContentsSigners else info.signingCertificateHistory
+        } else {
+            signatures ?: emptyArray()
+        }
+
+        return apkSignatures.map { signature ->
+            MessageDigest.getInstance("SHA-256")
+                .digest(signature.toByteArray())
+                .joinToString("") { "%02x".format(it) }
+        }
+    }
+
+    private fun String.toPlainReleaseNotes(): String {
+        return replace("\r\n", "\n")
+            .lines()
+            .map { line ->
+                line.trim()
+                    .removePrefix("#")
+                    .removePrefix("#")
+                    .removePrefix("#")
+                    .removePrefix("-")
+                    .removePrefix("*")
+                    .removePrefix(">")
+                    .trim()
+                    .replace("`", "")
+                    .replace("**", "")
+            }
+            .filter { it.isNotBlank() }
+            .joinToString("\n")
+            .take(MAX_RELEASE_NOTES_LENGTH)
+    }
+
+    private class UpdateException(message: String, cause: Throwable? = null) : Exception(message, cause)
 }

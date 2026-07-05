@@ -9,5 +9,6 @@ data class GitHubRelease(
     val tagName: String = "",
     val name: String? = null,
     val body: String? = null,
-    val assets: List<GitHubAsset> = emptyList()
+    val assets: List<GitHubAsset> = emptyList(),
+    val selectedAsset: GitHubAsset? = null
 )

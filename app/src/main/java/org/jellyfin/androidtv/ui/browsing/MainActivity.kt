@@ -80,33 +80,49 @@ class MainActivity : FragmentActivity() {
 
 		// Auto-Updater Check on App Main Screen
 		lifecycleScope.launchWhenResumed {
-			org.jellyfin.androidtv.update.UpdateManager.checkForUpdates(this@MainActivity) { release ->
-				val apkAsset = release.assets.find { it.name.endsWith(".apk", ignoreCase = true) } ?: return@checkForUpdates
-				androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
-					.setTitle("PAKFLIX Update Available")
-					.setMessage("A new version (${release.tagName}) of PAKFLIX is available. Would you like to update now?")
-					.setPositiveButton("Update Now") { _, _ ->
-						val progressDialog = android.app.ProgressDialog(this@MainActivity).apply {
-							setTitle("PAKFLIX Update")
-							setMessage("Downloading update, please wait...")
-							setProgressStyle(android.app.ProgressDialog.STYLE_HORIZONTAL)
-							max = 100
-							setCancelable(false)
-							show()
-						}
-						lifecycleScope.launchWhenResumed {
-							org.jellyfin.androidtv.update.UpdateManager.downloadAndInstallUpdate(
-								this@MainActivity,
-								apkAsset.downloadUrl
-							) { progress ->
-								progressDialog.progress = progress
-								if (progress >= 100) progressDialog.dismiss()
+			org.jellyfin.androidtv.update.UpdateManager.checkForUpdates(
+				this@MainActivity,
+				onUpdateAvailable = updateAvailable@ { release ->
+					val apkAsset = release.selectedAsset ?: return@updateAvailable
+					androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+						.setTitle("PAKFLIX Update Available")
+						.setMessage(org.jellyfin.androidtv.update.UpdateManager.buildUpdatePromptMessage(release))
+						.setPositiveButton("Update") { _, _ ->
+							val progressDialog = android.app.ProgressDialog(this@MainActivity).apply {
+								setTitle("PAKFLIX Update")
+								setMessage("Downloading update, please wait...")
+								setProgressStyle(android.app.ProgressDialog.STYLE_HORIZONTAL)
+								max = 100
+								setCancelable(false)
+								show()
+							}
+							lifecycleScope.launchWhenResumed {
+								org.jellyfin.androidtv.update.UpdateManager.downloadAndInstallUpdate(
+									this@MainActivity,
+									apkAsset,
+									onProgress = { progress ->
+										progressDialog.progress = progress
+									},
+									onResult = { result ->
+										progressDialog.dismiss()
+										if (!result.installerLaunched) {
+											Toast.makeText(
+												this@MainActivity,
+												result.message ?: "APK download failed.",
+												Toast.LENGTH_LONG
+											).show()
+										}
+									}
+								)
 							}
 						}
-					}
-					.setNegativeButton("Later", null)
-					.show()
-			}
+						.setNegativeButton("Later", null)
+						.show()
+				},
+				onCheckFailed = { message ->
+					Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+				}
+			)
 		}
 	}
 

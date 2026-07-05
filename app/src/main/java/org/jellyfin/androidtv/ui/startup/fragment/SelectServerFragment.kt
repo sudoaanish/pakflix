@@ -204,24 +204,45 @@ class SelectServerFragment : Fragment() {
 
 		// Auto-Updater Check
 		lifecycleScope.launchWhenResumed {
-			org.jellyfin.androidtv.update.UpdateManager.checkForUpdates(requireContext()) { release ->
-				val apkAsset = release.assets.find { it.name.endsWith(".apk", ignoreCase = true) } ?: return@checkForUpdates
-				androidx.appcompat.app.AlertDialog.Builder(requireContext())
-					.setTitle("PAKFLIX Update Available")
-					.setMessage("A new version (${release.tagName}) of PAKFLIX is available. Would you like to update now?")
-					.setPositiveButton("Update Now") { _, _ ->
-						lifecycleScope.launchWhenResumed {
-							org.jellyfin.androidtv.update.UpdateManager.downloadAndInstallUpdate(
-								requireContext(),
-								apkAsset.downloadUrl
-							) { progress ->
-								binding.appVersion.text = "PAKFLIX Downloading Update: $progress%"
+			org.jellyfin.androidtv.update.UpdateManager.checkForUpdates(
+				requireContext(),
+				onUpdateAvailable = updateAvailable@ { release ->
+					val updateContext = context ?: return@updateAvailable
+					val apkAsset = release.selectedAsset ?: return@updateAvailable
+					androidx.appcompat.app.AlertDialog.Builder(updateContext)
+						.setTitle("PAKFLIX Update Available")
+						.setMessage(org.jellyfin.androidtv.update.UpdateManager.buildUpdatePromptMessage(release))
+						.setPositiveButton("Update") { _, _ ->
+							val installContext = context ?: return@setPositiveButton
+							lifecycleScope.launchWhenResumed {
+								org.jellyfin.androidtv.update.UpdateManager.downloadAndInstallUpdate(
+									installContext,
+									apkAsset,
+									onProgress = { progress ->
+										binding.appVersion.text = "PAKFLIX Downloading Update: $progress%"
+									},
+									onResult = onResult@ { result ->
+										binding.appVersion.text = "PAKFLIX v${BuildConfig.VERSION_NAME}"
+										if (!result.installerLaunched) {
+											val resultContext = context ?: return@onResult
+											Toast.makeText(
+												resultContext,
+												result.message ?: "APK download failed.",
+												Toast.LENGTH_LONG
+											).show()
+										}
+									}
+								)
 							}
 						}
-					}
-					.setNegativeButton("Later", null)
-					.show()
-			}
+						.setNegativeButton("Later", null)
+						.show()
+				},
+				onCheckFailed = checkFailed@ { message ->
+					val checkContext = context ?: return@checkFailed
+					Toast.makeText(checkContext, message, Toast.LENGTH_LONG).show()
+				}
+			)
 		}
 
 		binding.root.requestFocus()
