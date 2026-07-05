@@ -10,23 +10,31 @@
 
 ## Key Features
 
-- **Leanback 10-Foot UI**: Native TV navigation optimized for Fire TV Remotes and D-pad controls.
-- **Hardware Video Acceleration**: Powered by Google Media3 ExoPlayer for low-latency playback and high frame-rate rendering.
-- **Over-The-Air Auto Updates**: Built-in update engine that checks GitHub Releases and updates directly on Fire OS devices.
-- **Custom TV Launcher Artwork**: Widescreen 16:9 landscape launcher banners tailored for Fire OS and Android TV home screens.
-- **Persistent Session Storage**: Auto-reconnects to configured media servers without requiring repeated credentials entry.
-- **Dark Obsidian Aesthetic**: Custom UI palette featuring `#0B0E0C` obsidian background with Pakistan Emerald (`#007200`) accents.
+- **Android TV / Fire TV UI**: Leanback-based TV navigation with Compose-backed screens where the upstream app uses them.
+- **Media3 Playback**: Jellyfin playback modules on Media3 ExoPlayer, with HLS, okhttp datasource, ffmpeg decoder, and subtitle support.
+- **GitHub Releases Updater**: In-app update checks against GitHub Releases, versioned APK asset selection, release notes in the prompt, and APK package/version/signer validation before installer launch.
+- **Pakflix Branding**: Pakflix app name, launcher banner, icon assets, package ID, and release/debug package separation.
+- **Server Session Persistence**: Stored server/session state for reconnecting without re-entering credentials.
+- **TV Home Integration**: Android TV channels, Watch Next integration, and launcher metadata inherited from the Jellyfin Android TV base.
+- **Pakflix Theme**: Dark green/obsidian resource palette with Pakflix launcher and card/focus styling.
 
 ---
 
 ## Architecture & Technology Stack
 
-- **Language**: Kotlin 1.9+
-- **UI Framework**: Jetpack Leanback & AndroidX Compose UI
-- **Media Engine**: Google Media3 ExoPlayer & Session API
+- **Language**: Kotlin 2.4.0
+- **Build**: Android Gradle Plugin 9.2.1, Gradle 9.6.1, JDK 17
+- **Android Target**: minSdk 23, targetSdk 36, compileSdk 36
+- **UI**: AndroidX Leanback, AppCompat Leanback theme, ViewBinding, and AndroidX Compose
+- **Playback**: Jellyfin playback modules with AndroidX Media3 ExoPlayer, Session, HLS, okhttp datasource, ffmpeg decoder, and libass subtitles
+- **API Client**: Jellyfin Kotlin SDK
 - **Dependency Injection**: Koin
-- **Async & Reactive Flow**: Kotlin Coroutines & StateFlow
-- **CI/CD Pipeline**: GitHub Actions for automated release compilation and APK signing
+- **Async / State**: Kotlin Coroutines, StateFlow, AndroidX Lifecycle
+- **Background Work**: AndroidX WorkManager
+- **Images**: Coil 3
+- **Serialization**: kotlinx.serialization JSON
+- **Logging / Crash Reporting**: Timber, SLF4J Timber bridge, ACRA
+- **Release Pipeline**: GitHub Actions release builds with Gradle caching, Pakflix release signing, APK verification, and GitHub Release asset upload
 
 ---
 
