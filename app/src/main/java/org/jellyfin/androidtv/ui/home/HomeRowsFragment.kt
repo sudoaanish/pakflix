@@ -59,6 +59,7 @@ import org.jellyfin.sdk.api.sockets.subscribe
 import org.jellyfin.sdk.model.api.LibraryChangedMessage
 import org.jellyfin.sdk.model.api.UserDataChangedMessage
 import org.koin.android.ext.android.inject
+import org.koin.androidx.viewmodel.ext.android.viewModel
 import timber.log.Timber
 import java.time.Instant
 import kotlin.time.Duration.Companion.seconds
@@ -77,6 +78,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private val navigationRepository by inject<NavigationRepository>()
 	private val itemLauncher by inject<ItemLauncher>()
 	private val keyProcessor by inject<KeyProcessor>()
+	private val homeHeroViewModel by viewModel<HomeHeroViewModel>()
 
 	private val helper by lazy { HomeFragmentHelper(requireContext(), userRepository) }
 
@@ -86,6 +88,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private var justLoaded = true
 	private var lastHandledPlaybackRefresh: Instant? = null
 	private var resetResumeRowWhenAttached = false
+	private var initialHeroFocusApplied = false
 
 	// Special rows
 	private val notificationsRow by lazy { NotificationsHomeFragmentRow(lifecycleScope, notificationsRepository) }
@@ -94,7 +97,17 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	override fun onCreate(savedInstanceState: Bundle?) {
 		super.onCreate(savedInstanceState)
 
-		adapter = MutableObjectAdapter<Row>(PositionableListRowPresenter())
+		adapter = MutableObjectAdapter<Row>(
+			HomeRowsPresenterSelector(
+				homeHeroRowPresenter = HomeHeroRowPresenter(::openHeroDetails),
+				defaultRowPresenter = PositionableListRowPresenter(),
+			)
+		)
+
+		homeHeroViewModel.state
+			.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
+			.onEach(::updateHeroRow)
+			.launchIn(lifecycleScope)
 
 		lifecycleScope.launch(Dispatchers.IO) {
 			val currentUser = withTimeout(30.seconds) {
@@ -183,6 +196,64 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 		// Subscribe to Audio messages
 		mediaManager.addAudioEventListener(this)
+	}
+
+	private fun updateHeroRow(state: HomeHeroState) {
+		val rowsAdapter = adapter as? MutableObjectAdapter<Row> ?: return
+		val existingIndex = rowsAdapter.indexOfFirst { it is HomeHeroRow }
+		val shouldShowHero = state is HomeHeroState.Ready && state.items.isNotEmpty()
+
+		when {
+			shouldShowHero && existingIndex == -1 -> {
+				Timber.i("Adding HomeHero row to Home row stack")
+				rowsAdapter.add(0, HomeHeroRow(homeHeroViewModel))
+				selectInitialHeroRow()
+				updateHeroBackground(state, "row-added")
+			}
+
+			shouldShowHero -> {
+				if (selectedPosition == 0) updateHeroBackground(state, "state-update")
+			}
+
+			existingIndex >= 0 -> {
+				Timber.i("Removing HomeHero row from Home row stack")
+				rowsAdapter.removeAt(existingIndex)
+			}
+		}
+	}
+
+	private fun selectInitialHeroRow() {
+		if (initialHeroFocusApplied) return
+		initialHeroFocusApplied = true
+
+		view?.post {
+			Timber.i("HomeHero initial focus selecting row 0")
+			setSelectedPosition(0)
+			verticalGridView?.requestFocus()
+		}
+	}
+
+	private fun updateHeroBackground(state: HomeHeroState, reason: String) {
+		val readyState = state as? HomeHeroState.Ready
+		val item = readyState?.items?.getOrNull(readyState.selectedIndex)
+		if (item == null) {
+			Timber.i("HomeHero background fallback reason=%s item=null", reason)
+			backgroundService.clearBackgrounds()
+			return
+		}
+
+		Timber.i(
+			"HomeHero background using BackgroundService reason=%s title=%s kind=%s",
+			reason,
+			item.title,
+			item.kind.serialName,
+		)
+		backgroundService.setBackground(item.backgroundItem)
+	}
+
+	private fun openHeroDetails(item: HomeHeroItem) {
+		Timber.i("HomeHero opening Details title=%s kind=%s", item.title, item.kind.serialName)
+		navigationRepository.navigate(Destinations.itemDetails(item.id))
 	}
 
 	override fun onKey(v: View?, keyCode: Int, event: KeyEvent?): Boolean {
@@ -349,6 +420,13 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			rowViewHolder: RowPresenter.ViewHolder?,
 			row: Row?,
 		) {
+			if (item is HomeHeroRow || row is HomeHeroRow) {
+				currentItem = null
+				currentRow = null
+				updateHeroBackground(homeHeroViewModel.state.value, "row-selected")
+				return
+			}
+
 			if (item !is BaseRowItem) {
 				currentItem = null
 				//fill in default background
