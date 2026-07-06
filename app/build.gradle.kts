@@ -21,8 +21,8 @@ android {
 
 		// Release version
 		applicationId = "com.pakflix.tv"
-		versionName = "0.2.14"
-		versionCode = 214
+		versionName = "0.3.0"
+		versionCode = 300
 	}
 
 	buildFeatures {
