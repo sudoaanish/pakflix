@@ -1,16 +1,18 @@
 package org.jellyfin.androidtv.ui.presentation
 
 import android.view.View
+import androidx.annotation.FontRes
 import androidx.core.view.isVisible
 import androidx.leanback.widget.ListRow
 import androidx.leanback.widget.ListRowPresenter
 import androidx.leanback.widget.RowPresenter
 
 open class CustomListRowPresenter @JvmOverloads constructor(
-	private val topPadding: Int? = null
+	private val topPadding: Int? = null,
+	@FontRes headerFontRes: Int? = null,
 ) : ListRowPresenter() {
 	init {
-		headerPresenter = CustomRowHeaderPresenter()
+		headerPresenter = CustomRowHeaderPresenter(headerFontRes)
 	}
 
 	override fun isUsingDefaultShadow() = false

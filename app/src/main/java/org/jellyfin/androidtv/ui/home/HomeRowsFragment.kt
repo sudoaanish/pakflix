@@ -26,6 +26,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.constant.CustomMessage
 import org.jellyfin.androidtv.constant.HomeSectionType
@@ -40,6 +41,7 @@ import org.jellyfin.androidtv.preference.UserSettingPreferences
 import org.jellyfin.androidtv.ui.GridButton
 import org.jellyfin.androidtv.ui.browsing.CompositeClickedListener
 import org.jellyfin.androidtv.ui.browsing.CompositeSelectedListener
+import org.jellyfin.androidtv.ui.browsing.BrowsingUtils
 import org.jellyfin.androidtv.ui.itemhandling.BaseRowItem
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
 import org.jellyfin.androidtv.ui.itemhandling.ItemRowAdapter
@@ -55,7 +57,11 @@ import org.jellyfin.androidtv.util.KeyProcessor
 import org.jellyfin.androidtv.util.apiclient.EmptyResponse
 import org.jellyfin.playback.core.PlaybackManager
 import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.api.client.exception.ApiClientException
+import org.jellyfin.sdk.api.client.extensions.itemsApi
 import org.jellyfin.sdk.api.sockets.subscribe
+import org.jellyfin.sdk.model.api.BaseItemDto
+import org.jellyfin.sdk.model.api.CollectionType
 import org.jellyfin.sdk.model.api.LibraryChangedMessage
 import org.jellyfin.sdk.model.api.UserDataChangedMessage
 import org.koin.android.ext.android.inject
@@ -100,7 +106,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		adapter = MutableObjectAdapter<Row>(
 			HomeRowsPresenterSelector(
 				homeHeroRowPresenter = HomeHeroRowPresenter(::openHeroDetails),
-				defaultRowPresenter = PositionableListRowPresenter(),
+				defaultRowPresenter = PositionableListRowPresenter(null, R.font.space_grotesk_medium),
 			)
 		)
 
@@ -116,30 +122,35 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 			// Start out with default sections
 			val homesections = userSettingPreferences.activeHomesections
+			val userViews = userViewsRepository.views.first()
 
 			// Make sure the rows are empty
-			val rows = mutableListOf<HomeFragmentRow>()
+			val primaryRows = mutableListOf<HomeFragmentRow>()
+			val latestRows = mutableListOf<HomeFragmentRow>()
+			var replaceLibraryShortcutRow = false
 
 			// Check for coroutine cancellation
 			if (!isActive) return@launch
 
 			// Actually add the sections
 			for (section in homesections) when (section) {
-				HomeSectionType.LATEST_MEDIA -> rows.add(helper.loadRecentlyAdded(userViewsRepository.views.first()))
-				HomeSectionType.LIBRARY_TILES_SMALL -> rows.add(HomeFragmentViewsRow(small = false))
-				HomeSectionType.LIBRARY_BUTTONS -> rows.add(HomeFragmentViewsRow(small = true))
-				HomeSectionType.RESUME -> rows.add(helper.loadResumeVideo())
-				HomeSectionType.RESUME_AUDIO -> rows.add(helper.loadResumeAudio())
+				HomeSectionType.LATEST_MEDIA -> latestRows.add(helper.loadRecentlyAdded(userViews))
+				HomeSectionType.LIBRARY_TILES_SMALL,
+				HomeSectionType.LIBRARY_BUTTONS -> replaceLibraryShortcutRow = true
+				HomeSectionType.RESUME -> primaryRows.add(helper.loadResumeVideo())
+				HomeSectionType.RESUME_AUDIO -> primaryRows.add(helper.loadResumeAudio())
 				HomeSectionType.RESUME_BOOK -> Unit // Books are not (yet) supported
-				HomeSectionType.ACTIVE_RECORDINGS -> rows.add(helper.loadLatestLiveTvRecordings())
-				HomeSectionType.NEXT_UP -> rows.add(helper.loadNextUp())
+				HomeSectionType.ACTIVE_RECORDINGS -> primaryRows.add(helper.loadLatestLiveTvRecordings())
+				HomeSectionType.NEXT_UP -> primaryRows.add(helper.loadNextUp())
 				HomeSectionType.LIVE_TV -> if (currentUser.policy?.enableLiveTvAccess == true) {
-					rows.add(HomeFragmentLiveTVRow(requireActivity(), userRepository))
-					rows.add(helper.loadOnNow())
+					primaryRows.add(HomeFragmentLiveTVRow(requireActivity(), userRepository))
+					primaryRows.add(helper.loadOnNow())
 				}
 
 				HomeSectionType.NONE -> Unit
 			}
+			val discoveryRows = if (replaceLibraryShortcutRow) createDiscoveryRows(userViews) else emptyList()
+			val rows = primaryRows + discoveryRows + latestRows
 
 			// Add sections to layout
 			withContext(Dispatchers.Main) {
@@ -259,6 +270,80 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	override fun onKey(v: View?, keyCode: Int, event: KeyEvent?): Boolean {
 		if (event?.action != KeyEvent.ACTION_UP) return false
 		return keyProcessor.handleKey(keyCode, currentItem, activity)
+	}
+
+	private suspend fun createDiscoveryRows(userViews: Collection<BaseItemDto>): List<HomeFragmentRow> {
+		val viewCounts = userViews
+			.groupingBy { it.collectionType ?: CollectionType.UNKNOWN }
+			.eachCount()
+		val movieViews = userViews.filter { it.collectionType == CollectionType.MOVIES }
+		val collectionItems = loadCollections(movieViews)
+		val otherMediaViews = userViews.filter(::isOtherMediaView)
+		val rows = buildList {
+			if (collectionItems.isNotEmpty()) {
+				add(HomeFragmentStaticItemsRow(getString(R.string.lbl_collections), collectionItems))
+			}
+			if (otherMediaViews.isNotEmpty()) {
+				add(HomeFragmentStaticItemsRow(getString(R.string.lbl_other_media), otherMediaViews))
+			}
+		}
+
+		Timber.i(
+			"Pakflix Home IA mode userViewCounts=%s movieLibraries=%d collectionsShown=%s collectionCount=%d otherMediaShown=%s otherMediaCount=%d",
+			viewCounts,
+			movieViews.size,
+			collectionItems.isNotEmpty(),
+			collectionItems.size,
+			otherMediaViews.isNotEmpty(),
+			otherMediaViews.size,
+		)
+
+		return rows
+	}
+
+	private suspend fun loadCollections(movieViews: List<BaseItemDto>): List<BaseItemDto> {
+		if (movieViews.isEmpty()) {
+			Timber.i("Pakflix Collections row hidden because no Movies libraries were found")
+			return emptyList()
+		}
+
+		val collectionsById = linkedMapOf<java.util.UUID, BaseItemDto>()
+		Timber.i("Pakflix Collections querying BoxSets for movieLibraryCount=%d", movieViews.size)
+
+		for (movieView in movieViews) {
+			val libraryName = movieView.name ?: "unknown"
+			try {
+				val response = api.itemsApi.getItems(BrowsingUtils.createCollectionsRequest(movieView.id)).content
+				Timber.i(
+					"Pakflix Collections query parent=%s resultCount=%d",
+					libraryName,
+					response.items.size,
+				)
+				for (item in response.items) {
+					collectionsById.putIfAbsent(item.id, item)
+				}
+			} catch (error: ApiClientException) {
+				Timber.w(error, "Pakflix Collections query failed for parent=%s", libraryName)
+			}
+		}
+
+		Timber.i(
+			"Pakflix Collections final merged count=%d from movieLibraryCount=%d",
+			collectionsById.size,
+			movieViews.size,
+		)
+		return collectionsById.values.toList()
+	}
+
+	private fun isOtherMediaView(item: BaseItemDto): Boolean {
+		return when (item.collectionType) {
+			CollectionType.MOVIES,
+			CollectionType.TVSHOWS,
+			CollectionType.BOXSETS,
+			CollectionType.BOOKS,
+			CollectionType.FOLDERS -> false
+			else -> userViewsRepository.isSupported(item.collectionType)
+		}
 	}
 
 	override fun onResume() {

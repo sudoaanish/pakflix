@@ -34,8 +34,10 @@
     <string name="lbl_other_channels">Other channels</string>
     <string name="lbl_collections">Collections</string>
     <string name="lbl_movies">Movies</string>
+    <string name="lbl_tv_shows">TV Shows</string>
     <string name="lbl_tv_series">TV series</string>
     <string name="lbl_other">Other</string>
+    <string name="lbl_other_media">Other Media</string>
     <string name="because_you_watched">Because you watched %1$s</string>
     <string name="lbl_play_all">Play all</string>
     <string name="lbl_shuffle_all">Shuffle all</string>

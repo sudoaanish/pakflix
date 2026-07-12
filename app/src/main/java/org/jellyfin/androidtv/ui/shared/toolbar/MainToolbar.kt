@@ -5,6 +5,7 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.auth.repository.SessionRepository
 import org.jellyfin.androidtv.auth.repository.UserRepository
+import org.jellyfin.androidtv.data.repository.UserViewsRepository
 import org.jellyfin.androidtv.ui.NowPlayingComposable
 import org.jellyfin.androidtv.ui.base.Icon
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
@@ -38,17 +40,23 @@ import org.jellyfin.androidtv.ui.base.button.IconButtonDefaults
 import org.jellyfin.androidtv.ui.navigation.ActivityDestinations
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
+import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
 import org.jellyfin.androidtv.ui.playback.MediaManager
 import org.jellyfin.androidtv.ui.settings.compat.SettingsViewModel
 import org.jellyfin.androidtv.util.apiclient.getUrl
 import org.jellyfin.androidtv.util.apiclient.primaryImage
 import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.model.api.BaseItemDto
+import org.jellyfin.sdk.model.api.CollectionType
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinActivityViewModel
+import timber.log.Timber
 
 enum class MainToolbarActiveButton {
 	User,
 	Home,
+	Movies,
+	TvShows,
 	Search,
 
 	None,
@@ -78,10 +86,48 @@ private fun MainToolbar(
 ) {
 	val focusRequester = remember { FocusRequester() }
 	val navigationRepository = koinInject<NavigationRepository>()
+	val userViewsRepository = koinInject<UserViewsRepository>()
+	val itemLauncher = koinInject<ItemLauncher>()
 	val mediaManager = koinInject<MediaManager>()
 	val sessionRepository = koinInject<SessionRepository>()
 	val settingsViewModel = koinActivityViewModel<SettingsViewModel>()
 	val activity = LocalActivity.current
+	val userViews by remember { userViewsRepository.views }.collectAsState(emptyList())
+	val movieViews = remember(userViews) { userViews.filter { it.collectionType == CollectionType.MOVIES } }
+	val tvViews = remember(userViews) { userViews.filter { it.collectionType == CollectionType.TVSHOWS } }
+	val selectedMovieView = remember(movieViews) { movieViews.firstOrNull() }
+	val selectedTvView = remember(tvViews) { tvViews.firstOrNull() }
+
+	LaunchedEffect(movieViews, tvViews) {
+		val counts = userViews
+			.groupingBy { it.collectionType ?: CollectionType.UNKNOWN }
+			.eachCount()
+		Timber.i(
+			"Pakflix top navigation user views loaded counts=%s movieCount=%d tvCount=%d selectedMovie=%s selectedTv=%s",
+			counts,
+			movieViews.size,
+			tvViews.size,
+			selectedMovieView?.name ?: "none",
+			selectedTvView?.name ?: "none",
+		)
+		if (movieViews.size > 1) {
+			Timber.i("Pakflix top navigation using first Movies library: %s", selectedMovieView?.name)
+		}
+		if (tvViews.size > 1) {
+			Timber.i("Pakflix top navigation using first TV Shows library: %s", selectedTvView?.name)
+		}
+	}
+
+	fun navigateToUserView(view: BaseItemDto?, label: String) {
+		if (view == null) {
+			Timber.i("Pakflix top navigation %s button hidden or unavailable; no matching user view", label)
+			return
+		}
+
+		Timber.i("Pakflix top navigation opening %s library=%s collectionType=%s", label, view.name, view.collectionType)
+		navigationRepository.navigate(itemLauncher.getUserViewDestination(view))
+	}
+
 	val activeButtonColors = ButtonDefaults.colors(
 		containerColor = JellyfinTheme.colorScheme.buttonActive,
 		contentColor = JellyfinTheme.colorScheme.onButtonActive,
@@ -155,6 +201,20 @@ private fun MainToolbar(
 						colors = if (activeButton == MainToolbarActiveButton.Home) activeButtonColors else toolbarButtonColors,
 						content = { Text(stringResource(R.string.lbl_home)) }
 					)
+					if (selectedMovieView != null) {
+						Button(
+							onClick = { navigateToUserView(selectedMovieView, "Movies") },
+							colors = if (activeButton == MainToolbarActiveButton.Movies) activeButtonColors else toolbarButtonColors,
+							content = { Text(stringResource(R.string.lbl_movies)) }
+						)
+					}
+					if (selectedTvView != null) {
+						Button(
+							onClick = { navigateToUserView(selectedTvView, "TV Shows") },
+							colors = if (activeButton == MainToolbarActiveButton.TvShows) activeButtonColors else toolbarButtonColors,
+							content = { Text(stringResource(R.string.lbl_tv_shows)) }
+						)
+					}
 					Button(
 						onClick = {
 							if (activeButton != MainToolbarActiveButton.Search) {

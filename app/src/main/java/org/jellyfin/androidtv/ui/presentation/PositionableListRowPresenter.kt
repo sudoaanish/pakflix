@@ -1,5 +1,6 @@
 package org.jellyfin.androidtv.ui.presentation
 
+import androidx.annotation.FontRes
 import androidx.leanback.widget.RowPresenter
 import timber.log.Timber
 
@@ -8,6 +9,7 @@ class PositionableListRowPresenter : CustomListRowPresenter {
 
 	constructor() : super()
 	constructor(padding: Int?) : super(padding)
+	constructor(padding: Int?, @FontRes headerFontRes: Int?) : super(padding, headerFontRes)
 
 	init {
 		shadowEnabled = false
