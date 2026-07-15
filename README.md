@@ -55,14 +55,14 @@ PAKFLIX_PLAYBACK_DIAGNOSTICS
 
 ### Direct Sideload via ADB
 
-Download the latest release APK from [GitHub Releases](https://github.com/sudoaanish/pakflix/releases). Release APKs use names like `pakflix-v0.3.1-release.apk`.
+Download the latest release APK from [GitHub Releases](https://github.com/sudoaanish/pakflix/releases). Release APKs use names like `pakflix-v0.3.2-release.apk`.
 
 ```bash
 # Connect to your Android TV / Fire TV device over Wi-Fi
 adb connect <DEVICE_IP_ADDRESS>:5555
 
 # Install PAKFLIX APK
-adb install -r pakflix-v0.3.1-release.apk
+adb install -r pakflix-v0.3.2-release.apk
 
 # Launch PAKFLIX
 adb shell am start -n com.pakflix.tv/org.jellyfin.androidtv.ui.startup.StartupActivity

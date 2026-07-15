@@ -13,10 +13,10 @@ jobs:
       contents: write
     env:
       EXPECTED_PACKAGE: com.pakflix.tv
-      EXPECTED_VERSION_CODE: '301'
+      EXPECTED_VERSION_CODE: '302'
       EXPECTED_SIGNER_SHA256: 359dde3161d91c47a020d2ed40a2b2a223272ac5cfc23cba8d35636759830c51
       RELEASE_APK: app/build/outputs/apk/release/pakflix-release.apk
-      RELEASE_ASSET: release_assets/pakflix-v0.3.1-release.apk
+      RELEASE_ASSET: release_assets/pakflix-v0.3.2-release.apk
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
