@@ -24,6 +24,11 @@
     <string name="lbl_status">%1$s / %2$s</string>
     <string name="lbl_genres">Genres</string>
     <string name="lbl_search">Search</string>
+    <string name="lbl_originals">Originals</string>
+    <string name="lbl_pakflix_originals">PAKFLIX Originals</string>
+    <string name="lbl_top_10">Top 10</string>
+    <string name="lbl_recent_movies">Recent Movies</string>
+    <string name="lbl_recent_shows">Recent Shows</string>
     <string name="msg_not_implemented">" not implemented"</string>
     <string name="lbl_latest">Recently added</string>
     <string name="lbl_latest_in">Recently added in %1$s</string>

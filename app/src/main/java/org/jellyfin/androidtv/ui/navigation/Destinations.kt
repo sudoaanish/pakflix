@@ -17,6 +17,7 @@ import org.jellyfin.androidtv.ui.itemdetail.FullDetailsFragment
 import org.jellyfin.androidtv.ui.itemdetail.ItemListFragment
 import org.jellyfin.androidtv.ui.itemdetail.MusicFavoritesListFragment
 import org.jellyfin.androidtv.ui.livetv.LiveTvGuideFragment
+import org.jellyfin.androidtv.ui.originals.PakflixOriginalsFragment
 import org.jellyfin.androidtv.ui.playback.AudioNowPlayingFragment
 import org.jellyfin.androidtv.ui.playback.CustomPlaybackOverlayFragment
 import org.jellyfin.androidtv.ui.playback.nextup.NextUpFragment
@@ -55,6 +56,7 @@ object Destinations {
 	fun pakflixMedia(item: BaseItemDto) = fragmentDestination<PakflixMediaFragment> {
 		putString(Extras.Folder, Json.encodeToString(item))
 	}
+	val pakflixOriginals = fragmentDestination<PakflixOriginalsFragment>()
 
 	// TODO only pass item id instead of complete JSON to browsing destinations
 	fun collectionBrowser(item: BaseItemDto) = fragmentDestination<CollectionFragment> {

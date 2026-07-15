@@ -35,6 +35,8 @@ import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.navigation.NavigationRepositoryImpl
+import org.jellyfin.androidtv.ui.originals.PakflixOriginalsRepository
+import org.jellyfin.androidtv.ui.originals.PakflixOriginalsViewModel
 import org.jellyfin.androidtv.ui.playback.PlaybackControllerContainer
 import org.jellyfin.androidtv.ui.playback.external.DefaultExternalPlayerApi
 import org.jellyfin.androidtv.ui.playback.external.ExternalPlayerApi
@@ -152,6 +154,7 @@ val appModule = module {
 	single<MediaSegmentRepository> { MediaSegmentRepositoryImpl(get(), get()) }
 	single<ExternalAppRepository> { ExternalAppRepository(get(), getAll(), get<DefaultExternalPlayerApi>()) }
 	single { HomeHeroRepository(get(), get()) }
+	single { PakflixOriginalsRepository(get(), get()) }
 
 	// External player APIs
 	single { VlcExternalPlayerApi() } bind ExternalPlayerApi::class
@@ -170,6 +173,7 @@ val appModule = module {
 	viewModel { DreamViewModel(get(), get(), get(), get(), get()) }
 	viewModel { SettingsViewModel() }
 	viewModel { HomeHeroViewModel(get()) }
+	viewModel { PakflixOriginalsViewModel(get()) }
 
 	single { BackgroundService(get(), get(), get(), get(), get()) }
 

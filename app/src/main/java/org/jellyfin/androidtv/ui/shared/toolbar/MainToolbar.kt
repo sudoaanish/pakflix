@@ -40,6 +40,8 @@ import org.jellyfin.androidtv.ui.base.button.IconButtonDefaults
 import org.jellyfin.androidtv.ui.navigation.ActivityDestinations
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
+import org.jellyfin.androidtv.ui.originals.OriginalsAvailability
+import org.jellyfin.androidtv.ui.originals.PakflixOriginalsRepository
 import org.jellyfin.androidtv.ui.playback.MediaManager
 import org.jellyfin.androidtv.ui.settings.compat.SettingsViewModel
 import org.jellyfin.androidtv.util.apiclient.getUrl
@@ -56,6 +58,7 @@ enum class MainToolbarActiveButton {
 	Home,
 	Movies,
 	TvShows,
+	Originals,
 	Search,
 
 	None,
@@ -88,13 +91,21 @@ private fun MainToolbar(
 	val userViewsRepository = koinInject<UserViewsRepository>()
 	val mediaManager = koinInject<MediaManager>()
 	val sessionRepository = koinInject<SessionRepository>()
+	val originalsRepository = koinInject<PakflixOriginalsRepository>()
 	val settingsViewModel = koinActivityViewModel<SettingsViewModel>()
 	val activity = LocalActivity.current
 	val userViews by remember { userViewsRepository.views }.collectAsState(emptyList())
+	val currentSession by sessionRepository.currentSession.collectAsState()
+	val originalsAvailability by originalsRepository.availability.collectAsState()
 	val movieViews = remember(userViews) { userViews.filter { it.collectionType == CollectionType.MOVIES } }
 	val tvViews = remember(userViews) { userViews.filter { it.collectionType == CollectionType.TVSHOWS } }
 	val selectedMovieView = remember(movieViews) { movieViews.firstOrNull() }
 	val selectedTvView = remember(tvViews) { tvViews.firstOrNull() }
+	val originalsVisible = originalsAvailability is OriginalsAvailability.Visible && originalsRepository.isAvailabilityCurrent()
+
+	LaunchedEffect(currentSession?.serverId, currentSession?.userId) {
+		originalsRepository.ensureAvailability()
+	}
 
 	LaunchedEffect(movieViews, tvViews) {
 		val counts = userViews
@@ -211,6 +222,16 @@ private fun MainToolbar(
 							onClick = { navigateToPakflixMedia(selectedTvView, "TV Shows") },
 							colors = if (activeButton == MainToolbarActiveButton.TvShows) activeButtonColors else toolbarButtonColors,
 							content = { Text(stringResource(R.string.lbl_tv_shows)) }
+						)
+					}
+					if (originalsVisible) {
+						Button(
+							onClick = {
+								Timber.i("Pakflix top navigation opening Originals page")
+								navigationRepository.navigate(Destinations.pakflixOriginals)
+							},
+							colors = if (activeButton == MainToolbarActiveButton.Originals) activeButtonColors else toolbarButtonColors,
+							content = { Text(stringResource(R.string.lbl_originals)) }
 						)
 					}
 					Button(
