@@ -10,6 +10,7 @@ import org.jellyfin.androidtv.ui.browsing.ByGenreFragment
 import org.jellyfin.androidtv.ui.browsing.ByLetterFragment
 import org.jellyfin.androidtv.ui.browsing.CollectionFragment
 import org.jellyfin.androidtv.ui.browsing.GenericFolderFragment
+import org.jellyfin.androidtv.ui.browsing.PakflixMediaFragment
 import org.jellyfin.androidtv.ui.browsing.SuggestedMoviesFragment
 import org.jellyfin.androidtv.ui.home.HomeFragment
 import org.jellyfin.androidtv.ui.itemdetail.FullDetailsFragment
@@ -47,6 +48,11 @@ object Destinations {
 
 	// TODO only pass item id instead of complete JSON to browsing destinations
 	fun librarySmartScreen(item: BaseItemDto) = fragmentDestination<BrowseViewFragment> {
+		putString(Extras.Folder, Json.encodeToString(item))
+	}
+
+	// TODO only pass item id instead of complete JSON to browsing destinations
+	fun pakflixMedia(item: BaseItemDto) = fragmentDestination<PakflixMediaFragment> {
 		putString(Extras.Folder, Json.encodeToString(item))
 	}
 

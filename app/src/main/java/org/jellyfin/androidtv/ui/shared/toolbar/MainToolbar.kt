@@ -40,7 +40,6 @@ import org.jellyfin.androidtv.ui.base.button.IconButtonDefaults
 import org.jellyfin.androidtv.ui.navigation.ActivityDestinations
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
-import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
 import org.jellyfin.androidtv.ui.playback.MediaManager
 import org.jellyfin.androidtv.ui.settings.compat.SettingsViewModel
 import org.jellyfin.androidtv.util.apiclient.getUrl
@@ -87,7 +86,6 @@ private fun MainToolbar(
 	val focusRequester = remember { FocusRequester() }
 	val navigationRepository = koinInject<NavigationRepository>()
 	val userViewsRepository = koinInject<UserViewsRepository>()
-	val itemLauncher = koinInject<ItemLauncher>()
 	val mediaManager = koinInject<MediaManager>()
 	val sessionRepository = koinInject<SessionRepository>()
 	val settingsViewModel = koinActivityViewModel<SettingsViewModel>()
@@ -118,14 +116,14 @@ private fun MainToolbar(
 		}
 	}
 
-	fun navigateToUserView(view: BaseItemDto?, label: String) {
+	fun navigateToPakflixMedia(view: BaseItemDto?, label: String) {
 		if (view == null) {
 			Timber.i("Pakflix top navigation %s button hidden or unavailable; no matching user view", label)
 			return
 		}
 
-		Timber.i("Pakflix top navigation opening %s library=%s collectionType=%s", label, view.name, view.collectionType)
-		navigationRepository.navigate(itemLauncher.getUserViewDestination(view))
+		Timber.i("Pakflix top navigation opening custom %s page library=%s collectionType=%s", label, view.name, view.collectionType)
+		navigationRepository.navigate(Destinations.pakflixMedia(view))
 	}
 
 	val activeButtonColors = ButtonDefaults.colors(
@@ -203,14 +201,14 @@ private fun MainToolbar(
 					)
 					if (selectedMovieView != null) {
 						Button(
-							onClick = { navigateToUserView(selectedMovieView, "Movies") },
+							onClick = { navigateToPakflixMedia(selectedMovieView, "Movies") },
 							colors = if (activeButton == MainToolbarActiveButton.Movies) activeButtonColors else toolbarButtonColors,
 							content = { Text(stringResource(R.string.lbl_movies)) }
 						)
 					}
 					if (selectedTvView != null) {
 						Button(
-							onClick = { navigateToUserView(selectedTvView, "TV Shows") },
+							onClick = { navigateToPakflixMedia(selectedTvView, "TV Shows") },
 							colors = if (activeButton == MainToolbarActiveButton.TvShows) activeButtonColors else toolbarButtonColors,
 							content = { Text(stringResource(R.string.lbl_tv_shows)) }
 						)
